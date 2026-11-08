@@ -692,6 +692,11 @@ class PluginManager(ConfigReloadMixin, metaclass=Singleton):
         安装本地不存在或需要更新的插件
         """
 
+        # 迁移实例需要保留原插件定制代码，不能在启动同步时被市场版本覆盖。
+        if os.environ.get("MOVIEPILOT_PLUGIN_SYNC_DISABLED", "").lower() in {"true", "1", "yes"}:
+            logger.info("插件自动同步已停用，保留迁移的本地插件代码")
+            return []
+
         def install_plugin(plugin):
             start_time = time.time()
             state, msg = PluginHelper().install(pid=plugin.id, repo_url=plugin.repo_url, force_install=True)

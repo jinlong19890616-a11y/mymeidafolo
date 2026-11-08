@@ -25,6 +25,7 @@
 推荐优先使用 Docker 部署。镜像名称、前端资源、插件资源和升级地址由发布者配置；本仓库不预置外部服务地址。
 
 - PostgreSQL 部署说明：[docs/postgresql-setup.md](docs/postgresql-setup.md)
+- 最终部署、内网反代与迁移边界：[docs/deployment-final.md](docs/deployment-final.md)
 
 也可以在本地源码目录中使用 CLI 安装和管理 mymediafolo：
 
