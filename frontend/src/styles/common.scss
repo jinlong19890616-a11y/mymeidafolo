@@ -1,0 +1,2023 @@
+/* stylelint-disable custom-property-pattern */
+/* stylelint-disable no-duplicate-selectors */
+/* stylelint-disable scss/at-rule-no-unknown */
+/* stylelint-disable no-descending-specificity */
+@use 'sass:map';
+@use 'vuetify/settings' as vuetify-settings;
+
+// 返回 Vuetify 指定 elevation 的完整三层 box-shadow，供主题定制器映射全局阴影档位。
+@function app-vuetify-elevation($level) {
+  @return map.get(vuetify-settings.$shadow-key-umbra, $level), map.get(vuetify-settings.$shadow-key-penumbra, $level),
+    map.get(vuetify-settings.$shadow-key-ambient, $level);
+}
+
+// 将相对阴影层级限制在 Vuetify elevation 的 0 到 24 档范围内。
+@function app-clamp-elevation($level) {
+  @if $level < 0 {
+    @return 0;
+  }
+
+  @if $level > 24 {
+    @return 24;
+  }
+
+  @return $level;
+}
+
+// 公共样式 - 所有主题都需要
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html.v-overlay-scroll-blocked {
+  position: static;
+}
+
+html.v-overlay-scroll-blocked body {
+  position: fixed;
+  overflow: hidden;
+  inset: 0;
+  inset-block-start: var(--v-body-scroll-y);
+}
+
+html.quick-access-scroll-locked,
+html.quick-access-scroll-locked body {
+  overflow: hidden !important;
+  overscroll-behavior: none;
+}
+
+@mixin hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media (width <= 768px) {
+  html,
+  body {
+    @include hide-scrollbar;
+  }
+}
+
+// 全局外观 token：圆角和阴影复用 Vuetify 的 rounded / elevation 分级。
+html {
+  --app-vuetify-rounded-0: #{map.get(vuetify-settings.$rounded, 0)};
+  --app-vuetify-rounded-sm: #{map.get(vuetify-settings.$rounded, 'sm')};
+  --app-vuetify-rounded: #{map.get(vuetify-settings.$rounded, null)};
+  --app-vuetify-rounded-lg: #{map.get(vuetify-settings.$rounded, 'lg')};
+  --app-vuetify-rounded-xl: #{map.get(vuetify-settings.$rounded, 'xl')};
+  --app-vuetify-rounded-pill: #{map.get(vuetify-settings.$rounded, 'pill')};
+
+  @for $level from 0 through 24 {
+    --app-elevation-#{$level}: #{app-vuetify-elevation($level)};
+  }
+
+  --app-theme-surface-radius: var(--app-vuetify-rounded-lg);
+  --app-surface-radius: var(--app-theme-surface-radius);
+  --app-field-radius: var(--app-vuetify-rounded-lg);
+  --app-control-radius: var(--app-vuetify-rounded);
+  --app-overlay-radius: var(--app-vuetify-rounded-lg);
+  --app-surface-border-width: 0;
+  --app-surface-border-opacity: 0.06;
+  --app-surface-border: var(--app-surface-border-width) solid
+    rgba(var(--v-theme-on-surface), var(--app-surface-border-opacity));
+  --app-card-light-border-width: var(--app-surface-border-width);
+  --app-card-light-border-opacity: 0.12;
+  --app-card-light-border: var(--app-card-light-border-width) solid
+    rgba(var(--v-theme-on-surface), var(--app-card-light-border-opacity));
+  --app-overlay-border: var(--app-surface-border);
+  --app-card-rest-shadow: var(--app-elevation-0);
+  --app-card-hover-shadow: var(--app-elevation-0);
+  --app-fab-shadow: var(--app-elevation-0);
+  --app-fab-shadow-strong: var(--app-elevation-0);
+  --app-fab-shadow-hover: var(--app-elevation-0);
+  --app-fab-shadow-strong-hover: var(--app-elevation-0);
+  --app-fab-shadow-active: var(--app-elevation-0);
+  --app-overlay-shadow: var(--app-elevation-0);
+  --app-surface-shadow: var(--app-elevation-0);
+  --app-surface-hover-shadow: var(--app-elevation-0);
+  --app-grouped-list-background: rgb(var(--v-theme-surface));
+  --app-grouped-list-backdrop-filter: none;
+  --app-grouped-list-border: var(--app-surface-border);
+  --app-grouped-list-radius: var(--app-theme-surface-radius);
+  --app-grouped-list-separator-color: rgba(var(--v-theme-on-surface), 0.14);
+  --app-grouped-list-header-color: rgba(var(--v-theme-on-surface), 0.58);
+  --app-grouped-list-chevron-color: rgba(var(--v-theme-on-surface), 0.42);
+  --app-grouped-list-hover-background: rgba(var(--v-theme-primary), 0.05);
+  --app-grouped-list-active-background: rgba(var(--v-theme-primary), 0.1);
+  --app-grouped-list-icon-foreground: rgb(var(--v-theme-on-primary));
+  --app-grouped-list-icon-opacity: 0.92;
+  --app-grouped-list-icon-size: 36px;
+  --app-grouped-list-icon-glyph-size: 1.25rem;
+  --app-grouped-list-content-offset: calc(24px + var(--app-grouped-list-icon-size));
+  --app-grouped-list-icon-primary-rgb: var(--v-theme-primary);
+  --app-grouped-list-icon-info-rgb: var(--v-theme-info);
+  --app-grouped-list-icon-success-rgb: var(--v-theme-success);
+  --app-grouped-list-icon-warning-rgb: var(--v-theme-warning);
+  --app-grouped-list-icon-secondary-rgb: var(--v-theme-secondary);
+  --mp-motion-duration-page: 180ms;
+  --mp-motion-duration-overlay: 160ms;
+  --mp-motion-ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --mp-motion-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+}
+
+html[data-theme-skin='bordered'] {
+  --app-surface-border-width: 1px;
+  --app-surface-border-opacity: 0.1;
+  --app-card-light-border-width: 1px;
+  --app-card-light-border-opacity: 0.16;
+}
+
+// 默认档位保留按钮等 control 的 Vuetify 原始圆角，同时让卡片、列表、弹窗和输入区使用更舒展的大圆角。
+html[data-theme-radius='default'] {
+  --app-theme-surface-radius: var(--app-vuetify-rounded-lg);
+  --app-field-radius: var(--app-vuetify-rounded-lg);
+  --app-control-radius: var(--app-vuetify-rounded);
+  --app-overlay-radius: var(--app-vuetify-rounded-lg);
+}
+
+html[data-theme-radius='none'] {
+  --app-theme-surface-radius: var(--app-vuetify-rounded-sm);
+  --app-field-radius: var(--app-vuetify-rounded-sm);
+  --app-control-radius: var(--app-vuetify-rounded-sm);
+  --app-overlay-radius: var(--app-vuetify-rounded-sm);
+}
+
+html[data-theme-radius='small'] {
+  --app-theme-surface-radius: var(--app-vuetify-rounded);
+  --app-field-radius: var(--app-vuetify-rounded);
+  --app-control-radius: var(--app-vuetify-rounded);
+  --app-overlay-radius: var(--app-vuetify-rounded);
+}
+
+html[data-theme-radius='large'] {
+  --app-theme-surface-radius: var(--app-vuetify-rounded-lg);
+  --app-field-radius: var(--app-vuetify-rounded-lg);
+  --app-control-radius: var(--app-vuetify-rounded-lg);
+  --app-overlay-radius: var(--app-vuetify-rounded-lg);
+}
+
+html[data-theme-radius='extra'] {
+  --app-theme-surface-radius: var(--app-vuetify-rounded-xl);
+  --app-field-radius: var(--app-vuetify-rounded-xl);
+  --app-control-radius: var(--app-vuetify-rounded-xl);
+  --app-overlay-radius: var(--app-vuetify-rounded-xl);
+}
+
+@for $level from 1 through 24 {
+  html[data-theme-shadow='#{$level}'] {
+    --app-card-rest-shadow: var(--app-elevation-#{app-clamp-elevation($level - 1)});
+    --app-card-hover-shadow: var(--app-elevation-#{app-clamp-elevation($level + 1)});
+    --app-fab-shadow: var(--app-elevation-#{$level});
+    --app-fab-shadow-active: var(--app-elevation-#{app-clamp-elevation($level - 2)});
+    --app-fab-shadow-hover: var(--app-elevation-#{app-clamp-elevation($level + 3)});
+    --app-fab-shadow-strong: var(--app-elevation-#{app-clamp-elevation($level + 2)});
+    --app-fab-shadow-strong-hover: var(--app-elevation-#{app-clamp-elevation($level + 4)});
+    --app-overlay-shadow: var(--app-elevation-#{app-clamp-elevation($level + 6)});
+    --app-surface-shadow: var(--app-elevation-#{$level});
+    --app-surface-hover-shadow: var(--app-elevation-#{app-clamp-elevation($level + 2)});
+  }
+}
+
+// 进度条样式
+#nprogress .bar {
+  background: rgb(var(--v-theme-primary)) !important;
+  inset-block-start: env(safe-area-inset-top) !important;
+}
+
+#nprogress .peg {
+  box-shadow:
+    0 0 10px rgb(var(--v-theme-primary)),
+    0 0 5px rgb(var(--v-theme-primary)) !important;
+  inline-size: 5px;
+  transform: rotate(0deg) translate(0, 0);
+}
+
+// 卡片高度匹配
+.match-height.v-row {
+  .v-card {
+    block-size: 100%;
+  }
+}
+
+// 统一系统内主要 surface 的边框、圆角和阴影，局部组件通过变量覆盖。
+.app-surface,
+.v-card,
+.v-sheet,
+.v-expansion-panel {
+  border: var(--app-surface-border);
+  border-radius: var(--app-surface-radius) !important;
+  box-shadow: var(--app-surface-shadow) !important;
+  transition:
+    border-color 0.2s ease,
+    border-radius 0.2s ease,
+    border-width 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.v-list {
+  border-radius: var(--app-surface-radius) !important;
+  box-shadow: var(--app-surface-shadow) !important;
+  transition:
+    border-radius 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.app-surface-static {
+  border-radius: var(--app-surface-radius) !important;
+  box-shadow: var(--app-surface-shadow) !important;
+}
+
+.app-surface-static:hover {
+  box-shadow: var(--app-surface-shadow) !important;
+}
+
+@media (width <= 768px) {
+  // iOS 式分组菜单的共享表面，主题只需覆盖 token 即可适配实色或玻璃背景。
+  .app-grouped-list.v-card {
+    --app-surface-radius: var(--app-grouped-list-radius);
+
+    border: var(--app-grouped-list-border);
+    backdrop-filter: var(--app-grouped-list-backdrop-filter) !important;
+    background-color: var(--app-grouped-list-background) !important;
+  }
+}
+
+// 统一卡片上浮反馈；hover 命中区域应放在静止外层，避免上浮后底边反复触发 mouseleave。
+.v-card.app-hover-lift-card {
+  border: var(--app-card-light-border);
+}
+
+.app-hover-lift-card {
+  transform: translateZ(0);
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.2s ease;
+}
+
+.app-hover-lift-card--hovering {
+  transform: translate3d(0, -0.25rem, 0);
+}
+
+// 全局页面与 overlay 动效：短距离、轻缩放，保持快速但不生硬。
+.mp-page-route {
+  inline-size: 100%;
+  min-block-size: 100%;
+  transform-origin: center top;
+}
+
+.mp-page-enter-active,
+.mp-page-leave-active {
+  backface-visibility: hidden;
+  transform-origin: center top;
+  transition:
+    opacity var(--mp-motion-duration-page) var(--mp-motion-ease-standard),
+    transform var(--mp-motion-duration-page) var(--mp-motion-ease-standard),
+    filter var(--mp-motion-duration-page) var(--mp-motion-ease-standard);
+  will-change: opacity, transform;
+}
+
+.mp-page-leave-active {
+  transition-duration: 120ms;
+  transition-timing-function: var(--mp-motion-ease-exit);
+}
+
+.mp-page-enter-from {
+  filter: blur(1px);
+  opacity: 0;
+  transform: translate3d(0, 0.5rem, 0) scale(0.992);
+}
+
+.mp-page-leave-to {
+  opacity: 0;
+  transform: translate3d(0, -0.25rem, 0) scale(0.998);
+}
+
+.mp-dialog-transition-enter-active,
+.mp-dialog-transition-leave-active,
+.dialog-transition-enter-active,
+.dialog-transition-leave-active,
+.v-overlay__content.mp-dialog-transition-enter-active,
+.v-overlay__content.mp-dialog-transition-leave-active,
+.v-overlay__content.dialog-transition-enter-active,
+.v-overlay__content.dialog-transition-leave-active {
+  transition:
+    opacity var(--mp-motion-duration-overlay) var(--mp-motion-ease-standard),
+    transform var(--mp-motion-duration-overlay) var(--mp-motion-ease-standard),
+    filter var(--mp-motion-duration-overlay) var(--mp-motion-ease-standard);
+  will-change: opacity, transform;
+}
+
+.mp-dialog-transition-leave-active,
+.dialog-transition-leave-active {
+  transition-duration: 120ms;
+  transition-timing-function: var(--mp-motion-ease-exit);
+}
+
+.mp-dialog-transition-enter-from,
+.mp-dialog-transition-leave-to,
+.dialog-transition-enter-from,
+.dialog-transition-leave-to {
+  filter: blur(0.5px);
+  opacity: 0;
+  transform: translate3d(0, 0.625rem, 0) scale(0.985);
+}
+
+.mp-popover-transition-enter-active,
+.mp-popover-transition-leave-active,
+.v-overlay__content.mp-popover-transition-enter-active,
+.v-overlay__content.mp-popover-transition-leave-active {
+  transition:
+    opacity 120ms var(--mp-motion-ease-standard),
+    transform 120ms var(--mp-motion-ease-standard);
+  will-change: opacity, transform;
+}
+
+.mp-popover-transition-leave-active {
+  transition-duration: 90ms;
+  transition-timing-function: var(--mp-motion-ease-exit);
+}
+
+.mp-popover-transition-enter-from,
+.mp-popover-transition-leave-to {
+  opacity: 0;
+  transform: translate3d(0, -0.25rem, 0) scale(0.98);
+}
+
+.mp-bottom-sheet-transition-enter-active,
+.mp-bottom-sheet-transition-leave-active,
+.dialog-bottom-transition-enter-active,
+.dialog-bottom-transition-leave-active,
+.v-overlay__content.mp-bottom-sheet-transition-enter-active,
+.v-overlay__content.mp-bottom-sheet-transition-leave-active,
+.v-overlay__content.dialog-bottom-transition-enter-active,
+.v-overlay__content.dialog-bottom-transition-leave-active {
+  transition:
+    opacity var(--mp-motion-duration-overlay) var(--mp-motion-ease-standard),
+    transform var(--mp-motion-duration-overlay) var(--mp-motion-ease-standard);
+  will-change: opacity, transform;
+}
+
+.mp-bottom-sheet-transition-leave-active,
+.dialog-bottom-transition-leave-active {
+  transition-duration: 120ms;
+  transition-timing-function: var(--mp-motion-ease-exit);
+}
+
+.mp-bottom-sheet-transition-enter-from,
+.mp-bottom-sheet-transition-leave-to,
+.dialog-bottom-transition-enter-from,
+.dialog-bottom-transition-leave-to {
+  opacity: 0;
+  transform: translate3d(0, 1.25rem, 0);
+}
+
+.v-dialog > .v-overlay__content {
+  transform-origin: center;
+}
+
+.v-menu > .v-overlay__content,
+.v-tooltip > .v-overlay__content {
+  transform-origin: top center;
+}
+
+.v-overlay__scrim,
+.v-navigation-drawer__scrim {
+  transition:
+    background-color var(--mp-motion-duration-overlay) var(--mp-motion-ease-standard),
+    opacity var(--mp-motion-duration-overlay) var(--mp-motion-ease-standard);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mp-page-enter-active,
+  .mp-page-leave-active,
+  .mp-dialog-transition-enter-active,
+  .mp-dialog-transition-leave-active,
+  .dialog-transition-enter-active,
+  .dialog-transition-leave-active,
+  .mp-popover-transition-enter-active,
+  .mp-popover-transition-leave-active,
+  .mp-bottom-sheet-transition-enter-active,
+  .mp-bottom-sheet-transition-leave-active,
+  .dialog-bottom-transition-enter-active,
+  .dialog-bottom-transition-leave-active {
+    transition-duration: 1ms !important;
+  }
+
+  .mp-page-enter-from,
+  .mp-page-leave-to,
+  .mp-dialog-transition-enter-from,
+  .mp-dialog-transition-leave-to,
+  .dialog-transition-enter-from,
+  .dialog-transition-leave-to,
+  .mp-popover-transition-enter-from,
+  .mp-popover-transition-leave-to,
+  .mp-bottom-sheet-transition-enter-from,
+  .mp-bottom-sheet-transition-leave-to,
+  .dialog-bottom-transition-enter-from,
+  .dialog-bottom-transition-leave-to {
+    filter: none !important;
+    transform: none !important;
+  }
+}
+
+// 底部导航卡片原本就是胶囊形态，不参与主题圆角切换。
+.footer-nav-card.v-card {
+  --app-surface-radius: 9999px;
+}
+
+@media (hover: hover) {
+  .app-surface:hover,
+  .v-card:hover,
+  .v-sheet:hover,
+  .v-list:hover,
+  .v-expansion-panel:hover {
+    box-shadow: var(--app-surface-hover-shadow) !important;
+  }
+}
+
+// 局部需要退出全局 surface 风格时使用这些工具类，避免再用 !important 抢优先级。
+.app-surface-borderless {
+  --app-surface-border: 0 solid transparent;
+  --app-overlay-border: 0 solid transparent;
+}
+
+.app-surface-flat,
+.app-surface-flat:hover {
+  --app-surface-hover-shadow: none;
+  --app-surface-shadow: none;
+}
+
+.app-surface-square {
+  --app-surface-radius: 0;
+}
+
+.app-surface-shape {
+  border-radius: var(--app-surface-radius);
+}
+
+// 统一文本输入、下拉框、文本域等有框表单控件的圆角，显式 rounded 控件保留特殊形态。
+.v-field:not(
+  .v-field--variant-plain,
+  .v-field--variant-underlined,
+  .v-field--rounded,
+  [class^='rounded-'],
+  [class*=' rounded-']
+) {
+  border-radius: var(--app-field-radius);
+  transition:
+    border-radius 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+// 自定义字段圆角时，outlined 字段带左侧 inner icon 需要同步放大左侧描边弧度。
+.v-field:not(
+    .v-field--variant-plain,
+    .v-field--variant-underlined,
+    .v-field--rounded,
+    [class^='rounded-'],
+    [class*=' rounded-']
+  ).v-field--variant-outlined.v-field--prepended {
+  --app-field-outline-start-size: max(12px, calc(var(--app-field-radius) + 8px));
+
+  .v-field__outline__start {
+    flex-basis: var(--app-field-outline-start-size);
+  }
+
+  .v-field__outline__notch {
+    max-inline-size: calc(100% - var(--app-field-outline-start-size));
+  }
+}
+
+// 小屏录入控件统一为左侧说明、右侧操作的紧凑行；桌面端由适配器直接渲染 Vuetify 原组件。
+.app-responsive-input {
+  display: grid;
+  min-block-size: 4.5rem;
+  min-inline-size: 0;
+  padding-block: 0.75rem;
+  align-items: center;
+  column-gap: 1rem;
+  grid-template-columns: minmax(0, 1fr) minmax(7rem, var(--app-responsive-input-control-width, 42%));
+}
+
+.app-responsive-input__meta,
+.app-responsive-input__control {
+  min-inline-size: 0;
+}
+
+.app-responsive-input__label {
+  display: block;
+  color: rgb(var(--v-theme-on-surface));
+  cursor: default;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.app-responsive-input__hint {
+  margin-block-start: 0.25rem;
+  color: rgba(var(--v-theme-on-surface), 0.56);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.app-responsive-input__control {
+  display: flex;
+  align-items: center;
+}
+
+.app-responsive-input__native {
+  inline-size: 100%;
+  margin: 0;
+}
+
+.app-responsive-input__native .v-input__control,
+.app-responsive-input__native .v-field,
+.app-responsive-input__native .v-field__field,
+.app-responsive-input__native .v-field__input {
+  min-inline-size: 0;
+}
+
+// 移动录入行隐藏字段内部的装饰图标，避免挤压右栏中的实际内容。
+.app-responsive-input__native .v-field__prepend-inner,
+.app-responsive-input__native .v-field__append-inner,
+.app-responsive-input__native .v-field__clearable {
+  display: none;
+}
+
+// 清除控件与具备按钮语义的末端操作仍需可用；下拉箭头仅重复整字段操作，不单独展示。
+.app-responsive-input__native .v-field__clearable,
+.app-responsive-input__native
+  .v-field__append-inner:has(
+    button,
+    [role='button']:not(.v-select__menu-icon, .v-autocomplete__menu-icon, .v-combobox__menu-icon)
+  ) {
+  display: inline-flex;
+}
+
+.app-responsive-input--field .v-field,
+.app-responsive-input--multiline .v-field {
+  border-radius: var(--app-control-radius) !important;
+  background-color: transparent;
+  transition:
+    background-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.app-responsive-input--empty:not(:has(.v-field--dirty)) .v-field {
+  background-color: transparent;
+}
+
+.app-responsive-input--empty:not(:has(.v-field--dirty)) .v-field__input::placeholder {
+  color: rgba(var(--v-theme-on-surface), 0.5);
+  opacity: 1;
+}
+
+.app-responsive-input--field .v-field__outline,
+.app-responsive-input--field .v-field__overlay,
+.app-responsive-input--multiline .v-field__outline,
+.app-responsive-input--multiline .v-field__overlay {
+  display: none;
+}
+
+.app-responsive-input--field .v-field__input,
+.app-responsive-input--multiline .v-field__input {
+  min-block-size: 2.75rem;
+  padding: 0.5rem;
+  font-size: 0.9375rem;
+  line-height: 1.4;
+}
+
+// 左右布局的单行字段将值放在右栏中央；整行字段会在移动端规则中恢复左对齐。
+.app-responsive-input--field .v-field__input {
+  justify-content: var(--app-responsive-input-value-alignment, center);
+  text-align: var(--app-responsive-input-value-alignment, center);
+}
+
+// 移动端单行字段内容超出可视宽度时保持一行并显示省略号。
+.app-responsive-input--field .v-field__input {
+  overflow: hidden;
+  flex-wrap: nowrap;
+}
+
+.app-responsive-input--field
+  :is(
+    input.v-field__input,
+    .v-field__input > input,
+    .v-select__selection,
+    .v-select__selection-text,
+    .v-autocomplete__selection,
+    .v-autocomplete__selection-text,
+    .v-combobox__selection,
+    .v-combobox__selection-text
+  ) {
+  overflow: hidden;
+  min-inline-size: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-responsive-input--field :is(input.v-field__input, .v-field__input > input),
+.app-responsive-input--field :is(input.v-field__input, .v-field__input > input)::placeholder {
+  text-align: var(--app-responsive-input-value-alignment, center);
+}
+
+.app-responsive-input--field
+  .app-responsive-input__native:is(.v-select--single, .v-autocomplete--single, .v-combobox--single)
+  :is(.v-select__selection, .v-autocomplete__selection, .v-combobox__selection) {
+  inline-size: 100%;
+  justify-content: var(--app-responsive-input-value-alignment, center);
+  text-align: var(--app-responsive-input-value-alignment, center);
+}
+
+.app-responsive-input__native:is(.v-select--multiple, .v-autocomplete--multiple, .v-combobox--multiple)
+  .v-field__input {
+  overflow: visible;
+  flex-wrap: wrap;
+  row-gap: 0.25rem;
+}
+
+.app-responsive-input__native:is(.v-select--multiple, .v-autocomplete--multiple, .v-combobox--multiple)
+  :is(
+    .v-select__selection,
+    .v-select__selection-text,
+    .v-autocomplete__selection,
+    .v-autocomplete__selection-text,
+    .v-combobox__selection,
+    .v-combobox__selection-text
+  ) {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.app-responsive-input__native:is(.v-select--multiple, .v-autocomplete--multiple, .v-combobox--multiple) .v-chip {
+  max-inline-size: 100%;
+}
+
+.app-responsive-input__native:is(.v-select--multiple, .v-autocomplete--multiple, .v-combobox--multiple)
+  .v-chip__content {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-responsive-input--field .v-field--focused,
+.app-responsive-input--multiline .v-field--focused {
+  background-color: rgba(var(--v-theme-primary), 0.08);
+  box-shadow: inset 0 0 0 1px rgba(var(--v-theme-primary), 0.2);
+}
+
+.app-responsive-input--multiline {
+  row-gap: 0.5rem;
+  align-items: start;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.app-responsive-input--multiline .app-responsive-input__control {
+  inline-size: 100%;
+}
+
+.app-responsive-input--multiline .v-field__input {
+  min-block-size: 5.5rem;
+  align-items: start;
+  text-align: start;
+}
+
+.app-responsive-input--choice .app-responsive-input__control,
+.app-responsive-input--choice .v-input__control,
+.app-responsive-input--group .v-selection-control-group {
+  justify-content: center;
+}
+
+.app-responsive-input--choice .v-input__control {
+  display: flex;
+}
+
+.app-responsive-input--choice .v-selection-control {
+  flex: 0 0 auto;
+  min-block-size: 2.75rem;
+}
+
+.app-responsive-input--range .v-input__control {
+  min-inline-size: 0;
+}
+
+.app-responsive-input--range .v-slider {
+  padding-block: 0.375rem;
+}
+
+.app-responsive-input__native .v-input__details {
+  padding-inline: 0.5rem 0;
+}
+
+.app-responsive-input__native .v-messages__message:empty {
+  display: none;
+}
+
+.app-responsive-input__native
+  .v-input__details:has(> .v-messages > .v-messages__message:empty):not(
+    :has(> .v-messages > .v-messages__message:not(:empty))
+  ):not(:has(> :not(.v-messages))) {
+  display: none;
+}
+
+.app-responsive-input__native .v-field--error {
+  background-color: rgba(var(--v-theme-error), 0.08);
+  box-shadow: inset 0 0 0 1px rgb(var(--v-theme-error));
+}
+
+.app-responsive-input--disabled .app-responsive-input__meta {
+  opacity: var(--v-disabled-opacity);
+}
+
+// 进入移动录入模式的控件强制独占一行，避免原 VCol 小于 12 列时两栏布局被再次压缩。
+@media (width < 960px) {
+  .v-row > :is(.v-col, [class*='v-col-']):has(.app-responsive-input) {
+    flex: 0 0 100%;
+    max-width: 100%;
+  }
+
+  // 移动录入行自身已经提供纵向留白，移除 VCol 纵向 gutter 避免堆叠字段间距过大。
+  .v-row > :is(.v-col, [class*='v-col-']):has(> .app-responsive-input) {
+    padding-block: 0;
+  }
+
+  // 从第二个录入项开始绘制顶部线；表单内允许字段包装，表单外仅匹配浅层结构以避免穿透嵌套卡片。
+  .app-responsive-input ~ .app-responsive-input,
+  .v-form .v-row > :is(.v-col, [class*='v-col-']) ~ :is(.v-col, [class*='v-col-']) .app-responsive-input,
+  .v-form .v-row + .v-row > :is(.v-col, [class*='v-col-']):first-child .app-responsive-input,
+  .v-row > :is(.v-col, [class*='v-col-']) ~ :is(.v-col, [class*='v-col-']) > .app-responsive-input,
+  .v-row > :is(.v-col, [class*='v-col-']) ~ :is(.v-col, [class*='v-col-']) > * > .app-responsive-input,
+  .v-row + .v-row > :is(.v-col, [class*='v-col-']):first-child > .app-responsive-input,
+  .v-row + .v-row > :is(.v-col, [class*='v-col-']):first-child > * > .app-responsive-input {
+    border-block-start: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  }
+
+  // 表单顶层在桌面也占满 12 格的字段改为上下两行，避免把嵌套 md=12 字段误判为整行字段。
+  .v-form
+    > .v-row
+    > :is(
+      .v-col-12:not([class*='v-col-sm-']):not([class*='v-col-md-']):not([class*='v-col-lg-']):not(
+          [class*='v-col-xl-']
+        ):not([class*='v-col-xxl-']),
+      .v-col-sm-12:not([class*='v-col-md-']):not([class*='v-col-lg-']):not([class*='v-col-xl-']):not(
+          [class*='v-col-xxl-']
+        ),
+      .v-col-md-12:not([class*='v-col-lg-']):not([class*='v-col-xl-']):not([class*='v-col-xxl-'])
+    )
+    > :is(.app-responsive-input--field, .app-responsive-input--range) {
+    --app-responsive-input-value-alignment: start;
+
+    row-gap: 0.5rem;
+    align-items: start;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .v-form
+    > .v-row
+    > :is(
+      .v-col-12:not([class*='v-col-sm-']):not([class*='v-col-md-']):not([class*='v-col-lg-']):not(
+          [class*='v-col-xl-']
+        ):not([class*='v-col-xxl-']),
+      .v-col-sm-12:not([class*='v-col-md-']):not([class*='v-col-lg-']):not([class*='v-col-xl-']):not(
+          [class*='v-col-xxl-']
+        ),
+      .v-col-md-12:not([class*='v-col-lg-']):not([class*='v-col-xl-']):not([class*='v-col-xxl-'])
+    )
+    > :is(.app-responsive-input--field, .app-responsive-input--range)
+    .app-responsive-input__control {
+    inline-size: 100%;
+  }
+}
+
+@media (hover: hover) {
+  .app-responsive-input--field .v-field:hover,
+  .app-responsive-input--multiline .v-field:hover {
+    background-color: rgba(var(--v-theme-on-surface), 0.04);
+  }
+}
+
+.v-btn:not(.v-btn--variant-plain, .v-btn--variant-text, .v-btn--flat, .theme-horizontal-nav__item) {
+  box-shadow: var(--app-surface-shadow) !important;
+  transition: box-shadow 0.2s ease;
+}
+
+.v-btn:not(.v-btn--rounded, .v-btn--flat, .v-btn--icon, [class^='rounded-'], [class*=' rounded-']) {
+  border-radius: var(--app-control-radius);
+  transition: border-radius 0.2s ease;
+}
+
+.v-btn-group:not(.v-btn-group--variant-plain, .v-btn-group--variant-text) {
+  border-radius: var(--app-control-radius);
+  box-shadow: var(--app-surface-shadow) !important;
+  transition:
+    box-shadow 0.2s ease,
+    border-radius 0.2s ease;
+}
+
+// 只给外层卡片和弹窗外壳保留阴影，内部 surface / control / elevation 工具类统一保持平面，避免多层阴影叠加。
+.v-card
+  :where(
+    .app-surface,
+    .app-surface-static,
+    .v-alert,
+    .v-avatar,
+    .v-btn,
+    .v-btn-group,
+    .v-card,
+    .v-chip,
+    .v-expansion-panel,
+    .v-expansion-panel__shadow,
+    .v-list,
+    .v-navigation-drawer,
+    .v-sheet,
+    .v-stepper,
+    .v-table,
+    .v-toolbar,
+    .v-window,
+    [class^='elevation-'],
+    [class*=' elevation-'],
+    [class^='shadow-'],
+    [class*=' shadow-']
+  ),
+.v-overlay__content
+  > .v-card
+  :where(
+    .app-surface,
+    .app-surface-static,
+    .v-alert,
+    .v-avatar,
+    .v-btn,
+    .v-btn-group,
+    .v-card,
+    .v-chip,
+    .v-expansion-panel,
+    .v-expansion-panel__shadow,
+    .v-list,
+    .v-navigation-drawer,
+    .v-sheet,
+    .v-stepper,
+    .v-table,
+    .v-toolbar,
+    .v-window,
+    [class^='elevation-'],
+    [class*=' elevation-'],
+    [class^='shadow-'],
+    [class*=' shadow-']
+  ),
+.v-overlay__content
+  > .v-sheet
+  :where(
+    .app-surface,
+    .app-surface-static,
+    .v-alert,
+    .v-avatar,
+    .v-btn,
+    .v-btn-group,
+    .v-card,
+    .v-chip,
+    .v-expansion-panel,
+    .v-expansion-panel__shadow,
+    .v-list,
+    .v-navigation-drawer,
+    .v-sheet,
+    .v-stepper,
+    .v-table,
+    .v-toolbar,
+    .v-window,
+    [class^='elevation-'],
+    [class*=' elevation-'],
+    [class^='shadow-'],
+    [class*=' shadow-']
+  ),
+.v-overlay__content
+  > form
+  > .v-card
+  :where(
+    .app-surface,
+    .app-surface-static,
+    .v-alert,
+    .v-avatar,
+    .v-btn,
+    .v-btn-group,
+    .v-card,
+    .v-chip,
+    .v-expansion-panel,
+    .v-expansion-panel__shadow,
+    .v-list,
+    .v-navigation-drawer,
+    .v-sheet,
+    .v-stepper,
+    .v-table,
+    .v-toolbar,
+    .v-window,
+    [class^='elevation-'],
+    [class*=' elevation-'],
+    [class^='shadow-'],
+    [class*=' shadow-']
+  ),
+.v-overlay__content
+  > form
+  > .v-sheet
+  :where(
+    .app-surface,
+    .app-surface-static,
+    .v-alert,
+    .v-avatar,
+    .v-btn,
+    .v-btn-group,
+    .v-card,
+    .v-chip,
+    .v-expansion-panel,
+    .v-expansion-panel__shadow,
+    .v-list,
+    .v-navigation-drawer,
+    .v-sheet,
+    .v-stepper,
+    .v-table,
+    .v-toolbar,
+    .v-window,
+    [class^='elevation-'],
+    [class*=' elevation-'],
+    [class^='shadow-'],
+    [class*=' shadow-']
+  ) {
+  --app-card-hover-shadow: none;
+  --app-card-rest-shadow: none;
+  --app-fab-shadow: none;
+  --app-fab-shadow-active: none;
+  --app-fab-shadow-hover: none;
+  --app-fab-shadow-strong: none;
+  --app-fab-shadow-strong-hover: none;
+  --app-surface-hover-shadow: none;
+  --app-surface-shadow: none;
+
+  box-shadow: none !important;
+}
+
+// 应用类信息卡片：固定右侧媒体槽位，避免图片被左侧文字挤压变形。
+.app-card-shell {
+  position: relative;
+  border: var(--app-card-light-border);
+  block-size: 100%;
+}
+
+// 设置项强调卡片：复用通知模板入口的弱强调条、轻渐变与悬浮反馈。
+.app-card-colorful {
+  overflow: hidden;
+  border-radius: var(--app-surface-radius);
+  background:
+    linear-gradient(
+      135deg,
+      rgba(var(--app-card-accent-rgb), var(--app-card-accent-start-opacity)),
+      rgba(var(--app-card-accent-end-rgb), var(--app-card-accent-end-opacity)) 46%,
+      rgba(var(--v-theme-surface), 0) 76%
+    ),
+    rgba(var(--v-theme-surface), var(--app-card-surface-opacity));
+  color: rgb(var(--v-theme-on-surface));
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+
+  --app-card-accent-rgb: var(--v-theme-primary);
+  --app-card-accent-end-rgb: var(--app-card-accent-rgb);
+  --app-card-accent-start-opacity: 0.025;
+  --app-card-accent-end-opacity: 0.012;
+  --app-card-border-opacity: 0.08;
+  --app-card-hover-border-opacity: 0.16;
+  --app-card-stripe-opacity: 0.22;
+  --app-card-surface-opacity: 0.92;
+  --app-surface-border: var(--app-surface-border-width) solid
+    rgba(var(--app-card-accent-rgb), var(--app-card-border-opacity));
+  --app-surface-hover-shadow: var(--app-card-hover-shadow);
+  --app-surface-shadow: var(--app-card-rest-shadow);
+}
+
+.app-card-colorful::before {
+  position: absolute;
+  background: rgb(var(--app-card-accent-rgb));
+  block-size: 100%;
+  content: '';
+  inline-size: 0.125rem;
+  inset-block: 0;
+  inset-inline-start: 0;
+  opacity: var(--app-card-stripe-opacity);
+  pointer-events: none;
+}
+
+.app-card-colorful:hover {
+  --app-surface-border: var(--app-surface-border-width) solid
+    rgba(var(--app-card-accent-rgb), var(--app-card-hover-border-opacity));
+}
+
+.app-card-colorful:focus-visible {
+  outline: 2px solid rgba(var(--app-card-accent-rgb), 0.7);
+  outline-offset: 3px;
+}
+
+.app-card-color-probe {
+  position: absolute;
+  block-size: 3rem;
+  inline-size: 3rem;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+html[data-theme='transparent'] .app-card-colorful,
+.v-theme--transparent .app-card-colorful {
+  backdrop-filter: blur(var(--transparent-blur, 10px));
+
+  --app-card-accent-start-opacity: 0.018;
+  --app-card-accent-end-opacity: 0.01;
+  --app-card-border-opacity: var(--app-surface-border-opacity);
+  --app-card-hover-border-opacity: var(--app-surface-border-opacity);
+  --app-card-stripe-opacity: 0.16;
+  --app-card-surface-opacity: var(--transparent-opacity-light, 0.2);
+  --app-surface-border: var(--app-surface-border-width) solid
+    rgba(var(--v-theme-on-surface), var(--app-surface-border-opacity));
+}
+
+html[data-theme='transparent'].transparent-glass-lightweight .app-card-colorful,
+html[data-theme='transparent'].transparent-glass-lightweight .v-theme--transparent .app-card-colorful,
+html[data-theme='transparent'].transparent-glass-realtime .app-card-colorful,
+html[data-theme='transparent'].transparent-glass-realtime .v-theme--transparent .app-card-colorful {
+  backdrop-filter: none;
+}
+
+// 保证卡片右上角的浮动操作区始终高于可点击的卡片内容层，避免误触发详情打开。
+.app-card-top-action {
+  z-index: 2;
+}
+
+.app-card-summary {
+  position: relative;
+  display: flex;
+  overflow: hidden;
+  align-items: stretch;
+  justify-content: flex-start;
+  block-size: 7.5rem;
+  min-block-size: 7.5rem;
+}
+
+.app-card-summary__content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  min-inline-size: 0;
+  padding-block: 0.25rem 0.5rem;
+  row-gap: 0.25rem;
+}
+
+.app-card-summary__title-row {
+  display: flex;
+  align-items: flex-start;
+  column-gap: 0.25rem;
+  min-inline-size: 0;
+}
+
+.app-card-summary__title-row > .v-badge {
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.app-card-summary__subtitle,
+.app-card-summary__meta-item {
+  overflow: hidden;
+  min-inline-size: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-card-summary__title {
+  display: -webkit-box;
+  overflow: hidden;
+  flex: 0 0 auto;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  line-height: 1.35;
+  max-block-size: calc(1.35em * 2);
+  min-inline-size: 0;
+  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.app-card-summary__title-row .app-card-summary__title {
+  flex: 1 1 auto;
+}
+
+.app-card-summary__meta {
+  display: flex;
+  overflow: hidden;
+  align-items: center;
+  column-gap: 0.5rem;
+  min-block-size: 1.5rem;
+  min-inline-size: 0;
+}
+
+.app-card-summary--single-action .app-card-summary__content {
+  padding-inline-end: 3.75rem;
+}
+
+.app-card-summary--double-action .app-card-summary__content {
+  padding-inline-end: 5rem;
+}
+
+.app-card-summary--title-subtitle {
+  padding-block: 0.75rem !important;
+}
+
+.app-card-summary--title-subtitle .app-card-summary__content {
+  justify-content: space-between;
+  block-size: 100%;
+  padding-block: 0;
+}
+
+.app-card-summary--title-subtitle .app-card-summary__title {
+  flex: 0 1 auto;
+}
+
+.app-card-summary--title-subtitle .app-card-summary__subtitle {
+  flex-shrink: 0;
+}
+
+.app-card-summary__media {
+  position: absolute;
+  z-index: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  inset-block-end: 0.75rem;
+  inset-inline-end: 1rem;
+  pointer-events: none;
+}
+
+.app-card-summary--single-action .app-card-summary__media,
+.app-card-summary--double-action .app-card-summary__media {
+  inset-inline-end: 1rem;
+}
+
+.app-card-summary__image {
+  flex-shrink: 0;
+  block-size: 3.5rem;
+  inline-size: 3.5rem;
+  max-block-size: 3.5rem;
+  max-inline-size: 3.5rem;
+  min-block-size: 3.5rem;
+  min-inline-size: 3.5rem;
+}
+
+.app-card-summary__image .v-img__img {
+  object-fit: contain;
+}
+
+// Toast通知样式
+.Vue-Toastification__container {
+  z-index: 2500;
+  margin-block: env(safe-area-inset-top) env(safe-area-inset-bottom);
+}
+
+@media only screen and (width <= 600px) {
+  .Vue-Toastification__container {
+    inline-size: 100vw;
+    padding-block: 4.5rem;
+    padding-inline: 1rem;
+  }
+}
+
+.Vue-Toastification__toast {
+  --mp-toast-accent-rgb: var(--v-theme-primary);
+
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-inline-start: 0.25rem solid rgba(var(--mp-toast-accent-rgb), 0.88);
+  border-radius: var(--app-overlay-radius);
+  background:
+    linear-gradient(
+      135deg,
+      rgba(var(--mp-toast-accent-rgb), 0.14),
+      rgba(var(--mp-toast-accent-rgb), 0.05) 42%,
+      rgba(var(--v-theme-surface), 0.96)
+    ),
+    rgb(var(--v-theme-surface)) !important;
+  box-shadow: var(--app-overlay-shadow);
+  color: rgba(var(--v-theme-on-surface), var(--v-high-emphasis-opacity)) !important;
+  font-family: inherit;
+}
+
+.Vue-Toastification__toast--default,
+.Vue-Toastification__toast--info {
+  --mp-toast-accent-rgb: var(--v-theme-info);
+}
+
+.Vue-Toastification__toast--success {
+  --mp-toast-accent-rgb: var(--v-theme-success);
+}
+
+.Vue-Toastification__toast--error {
+  --mp-toast-accent-rgb: var(--v-theme-error);
+}
+
+.Vue-Toastification__toast--warning {
+  --mp-toast-accent-rgb: var(--v-theme-warning);
+}
+
+.Vue-Toastification__icon,
+.Vue-Toastification__close-button {
+  color: rgba(var(--mp-toast-accent-rgb), 0.95);
+}
+
+.Vue-Toastification__close-button {
+  opacity: 0.65;
+}
+
+.Vue-Toastification__progress-bar {
+  background-color: rgba(var(--mp-toast-accent-rgb), 0.35);
+}
+
+// 对话框样式
+.v-dialog > .v-overlay__content > .v-card > .v-card-item {
+  padding: 16px;
+}
+
+// 弹窗底部左右动作区：对齐插件仓库设置弹窗的按钮间距、主次样式和移动端铺排。
+.app-dialog-actions {
+  flex: 0 0 auto;
+  gap: 0.5rem;
+  padding-block: 0.75rem 1rem !important;
+  padding-inline: 1.5rem !important;
+
+  > .v-btn {
+    flex: 0 0 auto;
+  }
+
+  > .app-dialog-actions__icon-btn {
+    inline-size: 2.5rem;
+    min-inline-size: 2.5rem;
+    padding-inline: 0;
+  }
+}
+
+@media (width <= 960px) {
+  .app-dialog-actions {
+    padding-block-end: calc(0.75rem + env(safe-area-inset-bottom)) !important;
+  }
+}
+
+@media (width <= 600px) {
+  .app-dialog-actions {
+    flex-wrap: wrap;
+    padding-block: 0.75rem calc(0.75rem + env(safe-area-inset-bottom)) !important;
+    padding-inline: 1rem !important;
+
+    > .v-btn:not(.app-dialog-actions__icon-btn) {
+      flex: 1 1 9rem;
+      min-inline-size: 0;
+    }
+
+    > .app-dialog-actions__icon-btn {
+      flex: 0 0 2.75rem;
+      inline-size: 2.75rem;
+      min-inline-size: 2.75rem;
+    }
+
+    > .v-spacer {
+      display: none;
+    }
+  }
+}
+
+// 路由过渡动画
+.fade-slide-leave-active,
+.fade-slide-enter-active {
+  transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.fade-slide-enter-from {
+  opacity: 0;
+  transform: translateX(20px);
+}
+
+.fade-slide-leave-to {
+  opacity: 0;
+  transform: translateX(20px);
+}
+
+// 网格布局样式
+.grid-info-card {
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  padding-block-end: 1rem;
+}
+
+.grid-site-card {
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  padding-block-end: 1rem;
+}
+
+.grid-media-card {
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+}
+
+.grid-backdrop-card {
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+}
+
+.grid-torrent-card {
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+}
+
+.grid-plugin-card {
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+}
+
+// 插件卡片头部染色层：普通主题保持原有实色底＋压暗遮罩，玻璃主题只替换色层与材质。
+.plugin-card__banner {
+  position: relative;
+  -webkit-backdrop-filter: var(--plugin-card-banner-backdrop-filter, none);
+  backdrop-filter: var(--plugin-card-banner-backdrop-filter, none);
+  background-image: var(--plugin-card-banner-scrim), var(--plugin-card-banner-tint);
+  transition: background-image 0.2s ease;
+
+  --plugin-card-effective-accent-rgb: var(
+    --plugin-card-accent-rgb,
+    var(--glass-material-accent-rgb, var(--v-theme-primary))
+  );
+  --plugin-card-banner-scrim: linear-gradient(rgba(0, 0, 0, 60%) 0%, rgba(0, 0, 0, 50%) 100%);
+  --plugin-card-banner-tint: linear-gradient(
+    rgb(var(--plugin-card-effective-accent-rgb)) 0%,
+    rgb(var(--plugin-card-effective-accent-rgb)) 100%
+  );
+}
+
+.grid-downloading-card {
+  grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+}
+
+.grid-directory-card {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 24rem), 1fr));
+}
+
+.grid-filterrule-card {
+  grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+}
+
+.grid-customrule-card {
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+}
+
+.grid-subscribe-card {
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+}
+
+@media (width <= 599px) {
+  .grid-subscribe-card {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+}
+
+.grid-user-card {
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+}
+
+.grid-app-card {
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+}
+
+.grid-workflow-card {
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+}
+
+.grid-workflow-share-card {
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+}
+
+// 文本样式
+.text-moviepilot {
+  background-clip: text;
+  background-image: linear-gradient(to bottom right, rgba(var(--v-theme-primary), 0.72), rgb(var(--v-theme-primary)));
+  color: transparent;
+}
+
+// 登录页与主框架共用的品牌文字效果。
+.moviepilot-wordmark {
+  background: linear-gradient(135deg, rgb(var(--v-theme-on-surface)) 30%, rgba(var(--v-theme-primary), 1) 100%);
+  background-clip: text;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+  -webkit-text-fill-color: transparent;
+  text-transform: uppercase;
+}
+
+.text-shadow {
+  text-shadow: 1px 1px #777;
+}
+
+// 滑块标题样式
+.slider-header {
+  position: relative;
+  display: flex;
+}
+
+.slider-title {
+  display: inline-flex;
+  align-items: center;
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.75rem;
+}
+
+@media (width >= 640px) {
+  .slider-title {
+    overflow: hidden;
+    font-size: 1.5rem;
+    line-height: 2.25rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+// 原生滚动条沿用浏览器的几何与显隐行为，只统一窄宽度和主题色。
+@supports (scrollbar-width: thin) {
+  * {
+    scrollbar-color: rgba(var(--v-theme-perfect-scrollbar-thumb), 60%) transparent;
+    scrollbar-width: thin;
+  }
+}
+
+// 旧版 WebKit 不支持标准滚动条属性，仅保留基础几何与主题色。
+@supports not (scrollbar-width: thin) {
+  ::-webkit-scrollbar {
+    block-size: 4px;
+    inline-size: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border-radius: 2px;
+    background: rgb(var(--v-theme-perfect-scrollbar-thumb));
+  }
+}
+
+// 组件样式
+.v-alert--variant-elevated,
+.v-alert--variant-flat {
+  border-radius: var(--app-surface-radius);
+  background: rgb(var(--v-table-header-background));
+  color: rgba(var(--v-theme-on-surface), var(--v-high-emphasis-opacity));
+}
+
+.backdrop-blur {
+  --tw-backdrop-blur: blur(8px) !important;
+
+  backdrop-filter: var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast)
+    var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity)
+    var(--tw-backdrop-saturate) var(--tw-backdrop-sepia) !important;
+}
+
+.v-toolbar {
+  background: rgb(var(--v-table-header-background));
+}
+
+.v-divider {
+  border-color: rgba(var(--v-theme-on-background), var(--v-selected-opacity));
+  opacity: 0.75;
+}
+
+:root {
+  --agent-assistant-fab-offset: 30rem;
+  --theme-customizer-fab-offset: 420px;
+}
+
+// 紧凑型悬浮操作按钮
+.compact-fab-stack {
+  position: fixed;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.75rem;
+  inset-block-end: max(1rem, calc(env(safe-area-inset-bottom) + 1rem));
+  inset-inline-end: max(1rem, calc(env(safe-area-inset-right) + 1rem));
+  pointer-events: none;
+  transition: inset-inline-end 0.2s ease;
+}
+
+.compact-fab-stack > * {
+  pointer-events: auto;
+}
+
+.compact-fab-stack > :last-child {
+  position: relative;
+  z-index: 1;
+}
+
+.compact-fab-stack--history {
+  inset-block-end: max(4.5rem, calc(env(safe-area-inset-bottom) + 4.5rem));
+}
+
+.compact-fab.v-fab {
+  display: inline-flex;
+  overflow: visible;
+  flex: none;
+  min-inline-size: 0 !important;
+  pointer-events: auto;
+}
+
+.compact-fab .v-fab__container {
+  position: static;
+  display: inline-flex;
+  overflow: visible;
+  margin: 0 !important;
+}
+
+.compact-fab .v-btn {
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--app-fab-shadow);
+  opacity: 0.98;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    filter 0.18s ease,
+    opacity 0.18s ease;
+}
+
+.compact-fab--primary .v-btn {
+  block-size: 3rem !important;
+  box-shadow: var(--app-fab-shadow-strong);
+  inline-size: 3rem !important;
+}
+
+.compact-fab--secondary .v-btn {
+  block-size: 3rem !important;
+  inline-size: 3rem !important;
+}
+
+.compact-fab--primary .v-icon {
+  font-size: 1.75rem !important;
+}
+
+.compact-fab--secondary .v-icon {
+  font-size: 1.75rem !important;
+}
+
+@media (hover: hover) {
+  .compact-fab .v-btn:hover {
+    box-shadow: var(--app-fab-shadow-hover);
+  }
+
+  .compact-fab--primary .v-btn:hover {
+    box-shadow: var(--app-fab-shadow-strong-hover);
+  }
+}
+
+@media (hover: hover) and (pointer: fine) and (width > 768px) {
+  .compact-fab .v-btn {
+    backdrop-filter: blur(18px) saturate(1.12);
+    opacity: 1;
+  }
+
+  .compact-fab-stack:not(:has(> :nth-child(2))) .compact-fab--primary .v-btn {
+    background-color: rgba(var(--v-theme-primary), 0.82) !important;
+    color: rgb(var(--v-theme-on-primary)) !important;
+  }
+
+  .compact-fab-stack:not(:has(> :nth-child(2))):hover .compact-fab--primary .v-btn,
+  .compact-fab-stack:not(:has(> :nth-child(2))):focus-within .compact-fab--primary .v-btn {
+    background-color: rgb(var(--v-theme-primary)) !important;
+  }
+
+  .compact-fab-stack:has(> :nth-child(2)) {
+    --compact-fab-step: 3.75rem;
+
+    padding-block-start: calc((var(--compact-fab-count, 8) - 1) * var(--compact-fab-step));
+  }
+
+  .compact-fab-stack:has(> :nth-child(2)):hover,
+  .compact-fab-stack:has(> :nth-child(2)):focus-within {
+    pointer-events: auto;
+  }
+
+  // 展开后的页面操作栈应优先接收指针，避免被停靠的智能助手入口截走 hover。
+  html:not([data-agent-assistant-open='true']):not([data-theme-customizer-open='true'])
+    .compact-fab-stack:has(> :nth-child(2)):hover,
+  html:not([data-agent-assistant-open='true']):not([data-theme-customizer-open='true'])
+    .compact-fab-stack:has(> :nth-child(2)):focus-within {
+    z-index: 2101;
+  }
+
+  .compact-fab-stack:has(> :nth-child(2):last-child) {
+    --compact-fab-count: 2;
+  }
+
+  .compact-fab-stack:has(> :nth-child(3):last-child) {
+    --compact-fab-count: 3;
+  }
+
+  .compact-fab-stack:has(> :nth-child(4):last-child) {
+    --compact-fab-count: 4;
+  }
+
+  .compact-fab-stack:has(> :nth-child(5):last-child) {
+    --compact-fab-count: 5;
+  }
+
+  .compact-fab-stack:has(> :nth-child(6):last-child) {
+    --compact-fab-count: 6;
+  }
+
+  .compact-fab-stack:has(> :nth-child(7):last-child) {
+    --compact-fab-count: 7;
+  }
+
+  .compact-fab-stack:has(> :nth-child(8):last-child) {
+    --compact-fab-count: 8;
+  }
+
+  .compact-fab-stack:has(> :nth-child(2)) > :not(:last-child) {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(calc(var(--compact-fab-order, 1) * var(--compact-fab-step)));
+    transition:
+      opacity 0.12s ease,
+      transform 0.12s ease;
+  }
+
+  .compact-fab-stack:has(> :nth-child(2)):not(:hover, :focus-within) > :last-child .v-icon {
+    opacity: 0;
+  }
+
+  .compact-fab-stack:has(> :nth-child(2)):not(:hover, :focus-within) > :last-child .v-btn {
+    border-color: transparent;
+    background-color: rgba(var(--v-theme-primary), 0.82) !important;
+    box-shadow: var(--app-fab-shadow-strong);
+    color: rgb(var(--v-theme-on-primary)) !important;
+  }
+
+  .compact-fab-stack:has(> :nth-child(2)):not(:hover, :focus-within) > :last-child .v-btn__content {
+    position: relative;
+  }
+
+  .compact-fab-stack:has(> :nth-child(2)):not(:hover, :focus-within) > :last-child .v-btn__content::before {
+    position: absolute;
+    display: block;
+    background: radial-gradient(circle, currentcolor 0 34%, transparent 40%) 0 0 / 0.35rem 0.35rem;
+    block-size: 1.05rem;
+    content: '';
+    inline-size: 1.05rem;
+    inset-block-start: 50%;
+    inset-inline-start: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .compact-fab-stack:has(> :nth-child(2)):hover > :not(:last-child),
+  .compact-fab-stack:has(> :nth-child(2)):focus-within > :not(:last-child) {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+
+  .compact-fab-stack > :nth-last-child(2) {
+    --compact-fab-order: 1;
+  }
+
+  .compact-fab-stack > :nth-last-child(3) {
+    --compact-fab-order: 2;
+  }
+
+  .compact-fab-stack > :nth-last-child(4) {
+    --compact-fab-order: 3;
+  }
+
+  .compact-fab-stack > :nth-last-child(5) {
+    --compact-fab-order: 4;
+  }
+
+  .compact-fab-stack > :nth-last-child(6) {
+    --compact-fab-order: 5;
+  }
+
+  .compact-fab-stack > :nth-last-child(7) {
+    --compact-fab-order: 6;
+  }
+
+  .compact-fab-stack > :nth-last-child(8) {
+    --compact-fab-order: 7;
+  }
+}
+
+.compact-fab .v-btn:active {
+  box-shadow: var(--app-fab-shadow-active);
+  transform: translateY(0) scale(0.98);
+}
+
+@media (width <= 768px) {
+  .compact-fab-stack {
+    gap: 0.625rem;
+    inset-block-end: max(0.875rem, calc(env(safe-area-inset-bottom) + 0.875rem));
+    inset-inline-end: max(0.875rem, calc(env(safe-area-inset-right) + 0.875rem));
+  }
+
+  .compact-fab-stack--history {
+    inset-block-end: max(4rem, calc(env(safe-area-inset-bottom) + 4rem));
+  }
+
+  .compact-fab--primary .v-btn {
+    block-size: 3.5rem !important;
+    inline-size: 3.5rem !important;
+  }
+
+  .compact-fab--secondary .v-btn {
+    block-size: 3.5rem !important;
+    inline-size: 3.5rem !important;
+  }
+}
+
+@media (width >= 601px) {
+  html[data-theme-customizer-open='true'] .compact-fab-stack {
+    inset-inline-end: calc(var(--theme-customizer-fab-offset) + max(1rem, calc(env(safe-area-inset-right) + 1rem)));
+  }
+
+  html[data-theme-customizer-open='true'] .global-action-buttons {
+    inset-inline-end: calc(var(--theme-customizer-fab-offset) + 2rem);
+  }
+
+  html[data-agent-assistant-open='true'] .compact-fab-stack {
+    inset-inline-end: calc(var(--agent-assistant-fab-offset) + max(1rem, calc(env(safe-area-inset-right) + 1rem)));
+  }
+
+  html[data-agent-assistant-open='true'] .global-action-buttons {
+    inset-inline-end: calc(var(--agent-assistant-fab-offset) + 2rem);
+  }
+}
+
+@media (width >= 601px) and (width <= 768px) {
+  html[data-theme-customizer-open='true'] .compact-fab-stack {
+    inset-inline-end: calc(
+      var(--theme-customizer-fab-offset) + max(0.875rem, calc(env(safe-area-inset-right) + 0.875rem))
+    );
+  }
+
+  html[data-agent-assistant-open='true'] .compact-fab-stack {
+    inset-inline-end: calc(
+      var(--agent-assistant-fab-offset) + max(0.875rem, calc(env(safe-area-inset-right) + 0.875rem))
+    );
+  }
+}
+
+.apexcharts-title-text {
+  color: rgba(var(--v-theme-on-surface), var(--v-high-emphasis-opacity)) !important;
+}
+
+.v-tabs:not(.v-tabs-pill).v-tabs--horizontal {
+  border-block-end: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+.v-fab__container {
+  padding-block-end: env(safe-area-inset-bottom);
+}
+
+.card-cover-blurred::before {
+  position: absolute;
+  backdrop-filter: blur(2px);
+  background: rgba(29, 39, 59, 48%);
+  content: '';
+  inset: 0;
+}
+
+// 弹出层样式
+.v-overlay__content .v-list {
+  border: var(--app-overlay-border);
+  border-radius: var(--app-surface-radius);
+  backdrop-filter: blur(6px);
+  background-color: rgb(var(--v-theme-surface), 0.9);
+  box-shadow: none;
+  padding-inline: 0.5rem !important;
+}
+
+.v-overlay__content .v-card:not(.bg-primary) {
+  border: var(--app-overlay-border);
+  border-radius: var(--app-surface-radius);
+  backdrop-filter: blur(8px);
+  background-color: rgb(var(--v-theme-surface), 0.95);
+  box-shadow: none;
+
+  .v-list,
+  .v-table {
+    backdrop-filter: none;
+    background-color: transparent;
+    box-shadow: none;
+  }
+}
+
+.v-menu {
+  .v-list-item:hover {
+    background-color: rgba(var(--v-theme-on-surface), 0.04);
+  }
+}
+
+.v-btn.v-btn--icon {
+  transition: opacity 0.15s ease;
+}
+
+.v-btn.v-btn--icon:hover {
+  opacity: 0.85;
+}
+
+.v-overlay__content {
+  background: transparent;
+  box-shadow: none;
+  margin-block: env(safe-area-inset-top) env(safe-area-inset-bottom);
+  transition:
+    opacity 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.v-menu > .v-overlay__content {
+  overflow: visible;
+}
+
+.v-dialog--fullscreen > .v-overlay__content > .v-card {
+  padding-block-end: calc(env(safe-area-inset-top) + env(safe-area-inset-bottom));
+}
+
+.v-dialog--fullscreen > .v-overlay__content {
+  display: flex;
+  justify-content: center;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  inline-size: 100%;
+  inset-inline: 0 !important;
+  margin-inline: auto;
+}
+
+// 全屏弹窗触发后，未横向铺满的卡片仍保持居中。
+.v-dialog--fullscreen > .v-overlay__content > .v-card,
+.v-dialog--fullscreen > .v-overlay__content > .v-sheet,
+.v-dialog--fullscreen > .v-overlay__content > form {
+  margin-inline: auto;
+  max-inline-size: 100%;
+}
+
+.v-dialog > .v-overlay__content {
+  margin-block: env(safe-area-inset-top) env(safe-area-inset-bottom);
+}
+
+.v-bottom-sheet > .v-bottom-sheet__content.v-overlay__content > .v-card {
+  padding-block-end: env(safe-area-inset-bottom);
+}
+
+.v-dialog > .v-overlay__content > .v-card,
+.v-dialog > .v-overlay__content > .v-sheet,
+.v-dialog > .v-overlay__content > form > .v-card,
+.v-dialog > .v-overlay__content > form > .v-sheet,
+.v-bottom-sheet > .v-bottom-sheet__content.v-overlay__content > .v-card,
+.v-menu > .v-overlay__content > .v-card,
+.v-menu > .v-overlay__content > .v-list {
+  border: var(--app-overlay-border);
+  border-radius: var(--app-overlay-radius) !important;
+  box-shadow: var(--app-overlay-shadow) !important;
+}
+
+.v-dialog--fullscreen > .v-overlay__content > .v-card,
+.v-dialog--fullscreen > .v-overlay__content > .v-sheet,
+.v-dialog--fullscreen > .v-overlay__content > form > .v-card,
+.v-dialog--fullscreen > .v-overlay__content > form > .v-sheet {
+  box-shadow: none !important;
+}
+
+// 小屏全屏弹窗仍贴底铺满，但顶部两个角跟随主题定制器圆角。
+@media (width <= 600px) {
+  .v-dialog--fullscreen > .v-overlay__content {
+    overflow: hidden;
+    border-end-end-radius: 0 !important;
+    border-end-start-radius: 0 !important;
+    border-start-end-radius: var(--app-overlay-radius) !important;
+    border-start-start-radius: var(--app-overlay-radius) !important;
+  }
+
+  .v-dialog--fullscreen > .v-overlay__content > .v-card,
+  .v-dialog--fullscreen > .v-overlay__content > .v-sheet,
+  .v-dialog--fullscreen > .v-overlay__content > form > .v-card,
+  .v-dialog--fullscreen > .v-overlay__content > form > .v-sheet {
+    border-end-end-radius: 0 !important;
+    border-end-start-radius: 0 !important;
+    border-start-end-radius: var(--app-overlay-radius) !important;
+    border-start-start-radius: var(--app-overlay-radius) !important;
+  }
+}
+
+.settings-icon-button {
+  flex-shrink: 0;
+  border-radius: 0.95rem;
+  block-size: 2.75rem;
+  inline-size: 2.75rem;
+  margin-inline-start: 0.25rem;
+  min-inline-size: 2.75rem;
+}
+
+.settings-icon-button .v-icon {
+  font-size: 1.35rem;
+}
+
+@media (width <= 768px) {
+  .settings-icon-button {
+    border-radius: 0.825rem;
+    block-size: 2.5rem;
+    inline-size: 2.5rem;
+    min-inline-size: 2.5rem;
+  }
+
+  .settings-icon-button .v-icon {
+    font-size: 1.25rem;
+  }
+}
+
+.v-infinite-scroll__side {
+  padding: 0;
+}
+
+.v-menu .v-overlay__content {
+  box-shadow: none;
+}
+
+// 主界面下拉入口提示：放在公共样式中，避免 scoped 样式无法响应根节点主题属性。
+.app-pull-indicator {
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border: 1px solid rgba(var(--v-theme-on-surface), var(--app-pull-indicator-border-opacity));
+  border-radius: 50%;
+  backdrop-filter: blur(var(--app-pull-indicator-blur)) saturate(1.2);
+  background: rgba(var(--v-theme-surface), var(--app-pull-indicator-surface-opacity));
+  box-shadow: var(--app-overlay-shadow);
+  inset-block-start: calc(
+    env(safe-area-inset-top, 0px) + 4rem + var(--app-pull-indicator-navbar-extra-height, 0rem) + 0.75rem
+  );
+  inset-inline-start: 50%;
+  pointer-events: none;
+  transform: translate3d(-50%, 0, 0);
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: opacity, transform;
+
+  --app-pull-indicator-blur: 20px;
+  --app-pull-indicator-border-opacity: 0.12;
+  --app-pull-indicator-icon-surface-opacity: 0.1;
+  --app-pull-indicator-surface-opacity: 0.86;
+}
+
+.app-pull-indicator__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(var(--v-theme-primary), var(--app-pull-indicator-icon-surface-opacity));
+  block-size: 40px;
+  inline-size: 40px;
+  transition:
+    transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.2s ease;
+}
+
+html[data-theme='light'] .app-pull-indicator {
+  --app-pull-indicator-border-opacity: 0.1;
+  --app-pull-indicator-icon-surface-opacity: 0.1;
+  --app-pull-indicator-surface-opacity: 0.92;
+}
+
+html[data-theme='dark'] .app-pull-indicator,
+html[data-theme='purple'] .app-pull-indicator {
+  --app-pull-indicator-border-opacity: 0.14;
+  --app-pull-indicator-icon-surface-opacity: 0.16;
+  --app-pull-indicator-surface-opacity: 0.78;
+}
+
+html[data-theme='transparent'] .app-pull-indicator {
+  backdrop-filter: blur(var(--transparent-blur-heavy, var(--app-pull-indicator-blur))) saturate(1.25);
+
+  --app-pull-indicator-border-opacity: 0.14;
+  --app-pull-indicator-icon-surface-opacity: 0.18;
+  --app-pull-indicator-surface-opacity: var(--transparent-opacity-heavy, 0.5);
+}
+
+html[data-theme='transparent'].transparent-blur-disabled .app-pull-indicator {
+  backdrop-filter: none;
+}

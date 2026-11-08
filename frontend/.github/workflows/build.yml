@@ -1,0 +1,64 @@
+name: Build Moviepilot-Frontend v2
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - v2
+    paths:
+      - 'package.json'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Release version
+        id: release_version
+        run: |
+          frontend_version=$(jq -r '.version' package.json)
+          echo "frontend_version=v$frontend_version" >> $GITHUB_ENV
+
+      - name: Setup node
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Download Icons
+        run: |
+          pwd
+          curl -sL "https://github.com/jxxghp/MoviePilot-Plugins/archive/refs/heads/main.zip" | busybox unzip -d /tmp -
+          mv /tmp/MoviePilot-Plugins-main/icons public/plugin_icon
+          rm -rf /tmp/MoviePilot-Plugins-main
+
+      - name: Build frontend
+        id: build_frontend
+        run: |
+          yarn
+          yarn build
+          echo "$frontend_version" > dist/version.txt
+          zip -r dist.zip dist
+
+      - name: Delete Release
+        uses: dev-drprasad/delete-tag-and-release@v1.1
+        continue-on-error: true
+        with:
+          tag_name: ${{ env.frontend_version }}
+          delete_release: true
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.frontend_version }}
+          name: ${{ env.frontend_version }}
+          draft: false
+          prerelease: false
+          make_latest: true
+          files: |
+            dist.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

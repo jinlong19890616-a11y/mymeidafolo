@@ -1,0 +1,13 @@
+*,
+::before,
+::after {
+  box-sizing: inherit;
+  background-repeat: no-repeat;
+}
+
+html {
+  box-sizing: border-box;
+  min-block-size: 100%;
+  min-block-size: 100vh;
+  min-block-size: 100dvh;
+}

@@ -1,1 +1,74 @@
-# mymeidafolo
+# mymediafolo
+
+代码仓库：<https://github.com/jinlong19890616-a11y/mymeidafolo>。后端源码位于仓库根目录，前端源码位于 [`frontend/`](frontend/)。源码版本及验证说明见 [docs/source-delivery.md](docs/source-delivery.md)。
+
+简体中文 | [English](README_EN.md)
+
+![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=for-the-badge)
+![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Docker-blue?style=for-the-badge)
+
+基于 MoviePilot v2.15.6（上游提交 `684e76e`）二次开发，聚焦媒体自动化、现有媒体管理兼容性和本地挂载目录后处理能力。
+
+# 仅用于学习交流使用，请勿在任何国内平台宣传该项目！
+
+发布地址、镜像地址和外部服务地址均由部署者配置注入。
+
+## 主要特性
+
+- 聚焦影视自动化的核心流程：订阅、搜索、下载、整理、刮削、媒体库刷新与消息通知。
+- 前后端分离，后端基于 FastAPI，前端基于 Vue 3，部署和扩展边界更清晰。
+- 支持下载器、媒体服务器、元数据源、消息渠道、插件、工作流和 AI Agent 等能力组合。
+- 管理 API、Google Drive 本地挂载后处理和部署说明见 `docs/`。
+
+## 安装使用
+
+推荐优先使用 Docker 部署。镜像名称、前端资源、插件资源和升级地址由发布者配置；本仓库不预置外部服务地址。
+
+- PostgreSQL 部署说明：[docs/postgresql-setup.md](docs/postgresql-setup.md)
+
+也可以在本地源码目录中使用 CLI 安装和管理 mymediafolo：
+
+```shell
+bash scripts/bootstrap-local.sh --repo-url "$MYMEDIAFOLO_REPOSITORY_URL"
+```
+
+安装完成后使用 `moviepilot` 命令完成初始化、启动、停止、更新和配置查看。完整命令见 [docs/cli.md](docs/cli.md)。
+
+## Agent
+
+1. mymediafolo 自带智能体能力，可在完成模型配置后，通过自然语言调用系统工具，辅助完成搜索、订阅、下载、整理、排障等管理任务。
+2. 其它智能体可以导入本仓库的 `skills/` 目录；使用本地路径导入，不依赖预置外部仓库地址。
+
+   ```shell
+   npx skills add ./skills
+   ```
+
+   内置 Skills 列表见 [skills/](skills/)，自定义 Skill 可参考 [skills/create-moviepilot-skill/SKILL.md](skills/create-moviepilot-skill/SKILL.md)。
+3. 其它 MCP 客户端可以通过 mymediafolo 的 MCP 端点 `/api/v1/mcp` 调用工具，认证方式、客户端配置和工具 API 见 [docs/mcp-api.md](docs/mcp-api.md)。
+
+
+## 参与开发
+
+开发前请先阅读仓库规则和本地环境说明，保持变更聚焦，通过测试后再提交 PR。常用入口：
+
+- 文档规则入口：[docs/rules/README.md](docs/rules/README.md)
+- 开发环境与本地源码运行：[docs/development-setup.md](docs/development-setup.md)
+- 测试说明：[docs/testing.md](docs/testing.md)
+- 新站点适配采集与 Feature Request 提交：[docs/site-adapter-capture.md](docs/site-adapter-capture.md)
+- REST API 文档：见 [docs/mcp-api.md](docs/mcp-api.md)
+- 插件开发说明：由部署者维护本地插件仓库并显式注入地址
+
+## 归属与许可证
+
+- 本项目基于 MoviePilot v2.15.6（上游提交 `684e76e`）进行修改，保留原项目及第三方组件的必要版权和归属声明。
+- 本项目遵循仓库中的 GPL-3.0 许可证；重新分发时请一并保留源代码、许可证和归属信息。
+
+## 免责申明
+
+- 本软件仅供学习交流使用，任何人不得将本软件用于商业用途，任何人不得将本软件用于违法犯罪活动，软件对用户行为不知情，一切责任由使用者承担。
+- 本软件代码开源，基于开源代码进行修改，人为去除相关限制导致软件被分发、传播并造成责任事件的，需由代码修改发布者承担全部责任，不建议对用户认证机制进行规避或修改并公开发布。
+- 本项目不接受捐赠，没有在任何地方发布捐赠信息页面，软件本身不收费也不提供任何收费相关服务，请仔细辨别避免误导。
+
+## 贡献者
+
+贡献者和发布信息由具体部署仓库维护。

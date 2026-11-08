@@ -1,0 +1,86 @@
+// These are styles which are both common in layout w/ vertical nav & horizontal nav
+@use "@layouts/styles/rtl";
+@use "@layouts/styles/placeholders";
+@use "@layouts/styles/mixins";
+@use "@configured-variables" as variables;
+
+html {
+  background: rgb(var(--v-theme-background));
+  min-block-size: 100vh;
+  min-block-size: 100dvh;
+}
+
+body {
+  overflow: visible !important;
+  background: rgb(var(--v-theme-background));
+  overscroll-behavior-y: contain;
+
+  -webkit-overflow-scrolling: touch;
+}
+
+body,
+#app,
+.v-application {
+  min-block-size: 100%;
+}
+
+.layout-vertical-nav {
+  padding-block: env(safe-area-inset-top) env(safe-area-inset-bottom);
+}
+
+.navbar-content-container {
+  padding-block-start: env(safe-area-inset-top);
+  padding-inline: 0.5rem;
+}
+
+.layout-page-content {
+  @include mixins.boxed-content(true);
+
+  flex-grow: 1;
+  overflow: clip visible;
+
+  // TODO: Use grid gutter variable here;
+  padding-block: 1.5rem;
+  padding-block-start: calc(env(safe-area-inset-top) + 4.5rem);
+  padding-inline: 0.5rem;
+
+  // display: flex;display
+
+
+  .page-content-container {
+    // flex: 1;flex
+    display: flex;
+
+    & > div:first-child {
+      position: relative;
+      flex: auto;
+      inline-size: calc(100vw - variables.$layout-vertical-nav-width - 1rem);
+    }
+  }
+}
+
+@media screen and (width <= 1280px){
+  .page-content-container > div:first-child  {
+    inline-size: calc(100vw - 1rem) !important;
+  }
+}
+
+.layout-footer {
+  .footer-content-container {
+    block-size: variables.$layout-vertical-nav-footer-height;
+  }
+
+  .footer-content-container-noheight {
+    block-size: 0 !important;
+  }
+
+  .layout-footer-sticky & {
+    position: sticky;
+    inset-block-end: 0;
+    will-change: transform;
+  }
+
+  .layout-footer-hidden & {
+    display: none;
+  }
+}

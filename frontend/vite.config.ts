@@ -1,0 +1,875 @@
+/// <reference types="vitest/config" />
+
+import { fileURLToPath } from 'node:url'
+import vue from '@vitejs/plugin-vue'
+import vueJsx from '@vitejs/plugin-vue-jsx'
+import AutoImport from 'unplugin-auto-import/vite'
+import Components from 'unplugin-vue-components/vite'
+import { defineConfig } from 'vite'
+import vuetify from 'vite-plugin-vuetify'
+import { VitePWA } from 'vite-plugin-pwa'
+import VueI18n from '@intlify/unplugin-vue-i18n/vite'
+import { resolve } from 'node:path'
+import federation from '@originjs/vite-plugin-federation'
+import topLevelAwait from 'vite-plugin-top-level-await'
+import { readFileSync } from 'node:fs'
+import { responsiveInputCoreComponentNames } from './src/plugins/vuetify/responsiveInputNames'
+import {
+  createDevServiceWorkerCleanupPlugin,
+  isPwaDevelopmentEnabled,
+  shouldEnableDevServiceWorkerCleanup,
+} from './scripts/pwa-development'
+
+// 读取 package.json 获取版本号
+const packageJson = JSON.parse(readFileSync('./package.json', 'utf-8'))
+const buildTime = new Date().getTime().toString()
+const isTestMode = (mode: string) => mode === 'test' || process.env.VITEST === 'true'
+
+/** 仅为单测提供可 mock 的 virtual federation 模块，不启用生产 federation 插件。 */
+function federationRuntimeTestModule() {
+  const moduleId = 'virtual:__federation__'
+  const resolvedModuleId = `\0${moduleId}`
+
+  return {
+    name: 'moviepilot-federation-runtime-test-module',
+    resolveId(source: string) {
+      if (source === moduleId) return resolvedModuleId
+    },
+    load(id: string) {
+      if (id !== resolvedModuleId) return
+      return `
+        export function __federation_method_getRemote() { throw new Error('Federation runtime must be mocked in tests') }
+        export function __federation_method_setRemote() { throw new Error('Federation runtime must be mocked in tests') }
+        export function __federation_method_unwrapDefault() { throw new Error('Federation runtime must be mocked in tests') }
+      `
+    },
+  }
+}
+
+// https://vitejs.dev/config/
+export default defineConfig(({ command, mode, isPreview }) => ({
+  base: './',
+  plugins: [
+    isTestMode(mode) && federationRuntimeTestModule(),
+    shouldEnableDevServiceWorkerCleanup(command, mode, isPreview, process.env.npm_lifecycle_event) &&
+      createDevServiceWorkerCleanupPlugin(),
+    vue(),
+    vueJsx(),
+    vuetify({
+      autoImport: {
+        // 这些录入控件由 Vuetify 全局适配器接管，避免模板局部导入绕过移动布局。
+        ignore: [...responsiveInputCoreComponentNames],
+      },
+      styles: {
+        configFile: 'src/styles/variables/_vuetify.scss',
+      },
+    }),
+    Components({
+      dirs: ['src/@core/components'],
+      dts: !isTestMode(mode),
+    }),
+    AutoImport({
+      imports: ['vue', 'vue-router', '@vueuse/core', '@vueuse/math', 'pinia', 'vue-i18n'],
+      vueTemplate: true,
+      dts: !isTestMode(mode),
+    }),
+    VueI18n({
+      include: [resolve(__dirname, 'src/locales/*.ts')],
+    }),
+    !isTestMode(mode) &&
+      federation({
+        name: 'MoviePilot',
+        filename: 'remoteEntry.js',
+        // @ts-ignore
+        remotes: {
+          // 动态remotes将在运行时注入
+          dummy: {
+            external: '',
+            format: 'var',
+          },
+        },
+        shared: ['vue', 'vuetify'],
+      }),
+    !isTestMode(mode) &&
+      VitePWA({
+        injectRegister: false,
+        strategies: 'injectManifest',
+        srcDir: 'src',
+        filename: 'service-worker.ts',
+        injectManifest: {
+          rollupFormat: 'iife',
+          maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,jpeg,webp,woff,woff2,ttf,otf,eot}'],
+        },
+        devOptions: {
+          enabled: isPwaDevelopmentEnabled(mode, process.env.npm_lifecycle_event),
+          type: 'module',
+        },
+        manifest: {
+          'name': 'MoviePilot',
+          'short_name': 'MoviePilot',
+          'description': 'MoviePilot - 智能影视媒体库管理工具',
+          'start_url': './',
+          'scope': './',
+          'display': 'standalone',
+          'display_override': ['window-controls-overlay', 'standalone'],
+          'lang': 'zh-CN',
+          'dir': 'ltr',
+          'categories': ['entertainment', 'multimedia', 'utilities'],
+          'icons': [
+            {
+              'src': './android-chrome-192x192.png',
+              'sizes': '192x192',
+              'type': 'image/png',
+              'purpose': 'any',
+            },
+            {
+              'src': './android-chrome-192x192_maskable.png',
+              'sizes': '192x192',
+              'type': 'image/png',
+              'purpose': 'maskable',
+            },
+            {
+              'src': './android-chrome-512x512.png',
+              'sizes': '512x512',
+              'type': 'image/png',
+              'purpose': 'any',
+            },
+            {
+              'src': './android-chrome-512x512_maskable.png',
+              'sizes': '512x512',
+              'type': 'image/png',
+              'purpose': 'maskable',
+            },
+          ],
+          'theme_color': '#0E1116',
+          'background_color': '#0E1116',
+          'edge_side_panel': {
+            'preferred_width': 320,
+          },
+          'launch_handler': {
+            'client_mode': 'navigate-existing',
+          },
+          'handle_links': 'preferred',
+          'id': 'moviepilot-app',
+          'shortcuts': [
+            {
+              'name': '推荐',
+              'short_name': '推荐',
+              'description': '查看推荐内容',
+              'url': './recommend',
+              'icons': [
+                {
+                  'src': './sparkles-icon-192x192.png',
+                  'sizes': '192x192',
+                  'type': 'image/png',
+                },
+              ],
+            },
+            {
+              'name': '探索',
+              'short_name': '探索',
+              'description': '探索新内容',
+              'url': './discover',
+              'icons': [
+                {
+                  'src': './clock-icon-192x192.png',
+                  'sizes': '192x192',
+                  'type': 'image/png',
+                },
+              ],
+            },
+            {
+              'name': '更多',
+              'short_name': '更多',
+              'description': '更多功能',
+              'url': './apps',
+              'icons': [
+                {
+                  'src': './cog-icon-192x192.png',
+                  'sizes': '192x192',
+                  'type': 'image/png',
+                },
+              ],
+            },
+          ],
+          'screenshots': [
+            {
+              'src': './android-chrome-512x512.png',
+              'sizes': '512x512',
+              'type': 'image/png',
+              'form_factor': 'wide',
+              'label': 'MoviePilot 主界面',
+            },
+            {
+              'src': './android-chrome-192x192.png',
+              'sizes': '192x192',
+              'type': 'image/png',
+              'form_factor': 'narrow',
+              'label': 'MoviePilot 移动端',
+            },
+          ],
+          'protocol_handlers': [
+            {
+              'protocol': 'web+moviepilot',
+              'url': './?handler=%s',
+            },
+          ],
+          'prefer_related_applications': false,
+          'related_applications': [],
+        },
+      }),
+    !isTestMode(mode) &&
+      topLevelAwait({
+        // The export name of top-level await promise for each chunk module
+        promiseExportName: '__mp_tla',
+        // The function to generate import names of top-level await promise in each chunk module
+        promiseImportName: i => `__mp_tla_${i}`,
+      }),
+  ],
+  define: {
+    'process.env': {},
+    '__APP_VERSION__': JSON.stringify(`v${packageJson.version}`),
+    '__BUILD_TIME__': JSON.stringify(buildTime),
+    '__PWA_DEVELOPMENT__': JSON.stringify(isPwaDevelopmentEnabled(mode, process.env.npm_lifecycle_event)),
+  },
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      '@core': fileURLToPath(new URL('./src/@core', import.meta.url)),
+      '@layouts': fileURLToPath(new URL('./src/@layouts', import.meta.url)),
+      '@images': fileURLToPath(new URL('./src/assets/images/', import.meta.url)),
+      '@styles': fileURLToPath(new URL('./src/styles/', import.meta.url)),
+      '@tests': fileURLToPath(new URL('./tests', import.meta.url)),
+      '@configured-variables': fileURLToPath(new URL('./src/styles/variables/_template.scss', import.meta.url)),
+      'apexcharts': fileURLToPath(new URL('node_modules/apexcharts', import.meta.url)),
+    },
+  },
+  build: {
+    target: 'esnext',
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: true,
+        drop_debugger: true,
+      },
+    },
+    chunkSizeWarningLimit: 5000,
+    cssCodeSplit: false,
+  },
+  optimizeDeps: {
+    exclude: ['vuetify'],
+    entries: ['./src/**/*.vue'],
+  },
+  server: {
+    proxy: {
+      '/api/v1': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        secure: false,
+        cookieDomainRewrite: 'localhost',
+      },
+    },
+  },
+  css: {
+    preprocessorOptions: {
+      sass: {
+        api: 'modern-compiler',
+        quietDeps: true,
+      },
+      scss: {
+        api: 'modern-compiler',
+        quietDeps: true,
+      },
+    },
+  },
+  test: {
+    clearMocks: true,
+    environment: 'jsdom',
+    environmentOptions: {
+      jsdom: {
+        pretendToBeVisual: true,
+        url: 'http://localhost/',
+      },
+    },
+    include: ['src/**/__tests__/**/*.spec.ts', 'tests/config/**/*.spec.ts'],
+    restoreMocks: true,
+    server: {
+      deps: {
+        inline: ['vuetify'],
+      },
+    },
+    setupFiles: ['./tests/setup.ts'],
+    testTimeout: 60_000,
+    unstubGlobals: true,
+    coverage: {
+      include: [
+        'src/api/gdrive.ts',
+        'src/pages/gdrive.vue',
+        'src/views/gdrive/*.vue',
+        'src/utils/recommendSources.ts',
+        'src/utils/permission.ts',
+        'src/utils/pluginSidebarNav.ts',
+        'src/utils/requestOptimizer.ts',
+        'src/utils/sseManager.ts',
+        'src/utils/federationLoader.ts',
+        'src/utils/federationRuntime.ts',
+        'src/stores/auth.ts',
+        'src/stores/pluginSidebarNav.ts',
+        'src/pages/appcenter.vue',
+        'src/pages/recommend.vue',
+        'src/pages/discover.vue',
+        'src/pages/browse.vue',
+        'src/pages/media.vue',
+        'src/pages/resource.vue',
+        'src/pages/site.vue',
+        'src/pages/subscribe.vue',
+        'src/pages/plugin-app.vue',
+        'src/views/dashboard/MediaRecommend.vue',
+        'src/views/discover/MediaCardSlideView.vue',
+        'src/views/subscribe/FullCalendarView.vue',
+        'src/views/subscribe/SubscribeListView.vue',
+        'src/views/subscribe/SubscribePopularView.vue',
+        'src/views/subscribe/SubscribeShareView.vue',
+        'src/composables/useMediaSubscribe.ts',
+        'src/composables/useTorrentFilter.ts',
+        'src/components/cards/SubscribeCard.vue',
+        'src/components/filter/TorrentFilterBar.vue',
+        'src/components/cards/TorrentCard.vue',
+        'src/components/cards/TorrentItem.vue',
+        'src/utils/torrentDownloadCache.ts',
+        'src/components/dialog/SiteAddEditDialog.vue',
+        'src/components/dialog/SiteCookieUpdateDialog.vue',
+        'src/components/dialog/SiteImportDialog.vue',
+        'src/components/cards/SubscribeShareCard.vue',
+        'src/components/dialog/ForkSubscribeDialog.vue',
+        'src/components/dialog/SubscribeEditDialog.vue',
+        'src/components/dialog/SubscribeFilesDialog.vue',
+        'src/components/dialog/SubscribeHistoryDialog.vue',
+        'src/components/dialog/SubscribeSeasonDialog.vue',
+        'src/components/dialog/SubscribeShareDialog.vue',
+        'src/components/dialog/SubscribeShareStatisticsDialog.vue',
+        'src/components/filebrowser/FileList.vue',
+        'src/components/dialog/DiscoverTabOrderDialog.vue',
+        'src/components/dialog/SiteResourceDialog.vue',
+        'src/components/dialog/SiteUserDataDialog.vue',
+        'src/components/dialog/AddDownloadDialog.vue',
+        'src/components/dialog/AddSubtitleDownloadDialog.vue',
+        'src/components/dialog/ReorganizeDialog.vue',
+        'src/components/dialog/TransferQueueDialog.vue',
+        'src/components/dialog/PluginConfigDialog.vue',
+        'src/components/dialog/PluginDataDialog.vue',
+        'src/views/reorganize/FileBrowserView.vue',
+        'src/components/filebrowser/FileBrowser.vue',
+        'src/components/filebrowser/FileToolbar.vue',
+        'src/components/filebrowser/FileNavigator.vue',
+        'src/views/discover/TheMovieDbView.vue',
+        'src/views/discover/DoubanView.vue',
+        'src/views/discover/BangumiView.vue',
+        'src/views/discover/ExtraSourceView.vue',
+        'src/views/discover/MediaCardListView.vue',
+        'src/views/discover/MediaDetailView.vue',
+        'src/components/cards/MediaCard.vue',
+        'src/components/cards/SiteCard.vue',
+        'src/components/cards/DownloadingCard.vue',
+        'src/components/cards/PluginFolderCard.vue',
+        'src/components/cards/PluginCard.vue',
+        'src/components/cards/PluginAppCard.vue',
+        'src/components/dialog/PluginMarketDetailDialog.vue',
+        'src/components/dialog/PluginVersionHistoryDialog.vue',
+        'src/components/slide/VirtualSlideView.vue',
+        'src/views/discover/PersonCardSlideView.vue',
+        'src/views/reorganize/TransferHistoryView.vue',
+        'src/utils/mediaStatusCache.ts',
+        'src/utils/searchStream.ts',
+        'src/views/site/SiteCardListView.vue',
+        'src/views/reorganize/DownloadingListView.vue',
+        'src/views/plugin/PluginCardListView.vue',
+        'src/utils/siteIconCache.ts',
+      ],
+      provider: 'v8',
+      reporter: ['text', 'json-summary', 'html'],
+      reportsDirectory: 'coverage',
+      thresholds: {
+        branches: 80,
+        functions: 85,
+        lines: 85,
+        statements: 85,
+        'src/components/cards/SubscribeCard.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/components/cards/TorrentCard.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/components/cards/TorrentItem.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/components/cards/PluginFolderCard.vue': {
+          branches: 80,
+          functions: 85,
+          lines: 85,
+          statements: 85,
+        },
+        'src/views/plugin/PluginCardListView.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/components/cards/PluginCard.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/components/cards/PluginAppCard.vue': {
+          branches: 80,
+          functions: 85,
+          lines: 85,
+          statements: 85,
+        },
+        'src/components/dialog/PluginMarketDetailDialog.vue': {
+          branches: 80,
+          functions: 85,
+          lines: 85,
+          statements: 85,
+        },
+        'src/components/dialog/PluginVersionHistoryDialog.vue': {
+          branches: 80,
+          functions: 85,
+          lines: 85,
+          statements: 85,
+        },
+        'src/views/reorganize/FileBrowserView.vue': {
+          branches: 80,
+          functions: 85,
+          lines: 85,
+          statements: 85,
+        },
+        'src/components/filebrowser/FileBrowser.vue': {
+          branches: 80,
+          functions: 85,
+          lines: 85,
+          statements: 85,
+        },
+        'src/components/filebrowser/FileToolbar.vue': {
+          branches: 80,
+          functions: 85,
+          lines: 85,
+          statements: 85,
+        },
+        'src/components/filebrowser/FileNavigator.vue': {
+          branches: 80,
+          functions: 85,
+          lines: 85,
+          statements: 85,
+        },
+        'src/components/filebrowser/FileList.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/utils/torrentDownloadCache.ts': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/components/cards/SubscribeShareCard.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/components/dialog/ForkSubscribeDialog.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/components/dialog/SiteAddEditDialog.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/components/dialog/SiteCookieUpdateDialog.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/components/dialog/SiteImportDialog.vue': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/components/dialog/SubscribeEditDialog.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/components/dialog/SubscribeFilesDialog.vue': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/components/dialog/SubscribeHistoryDialog.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/components/dialog/SubscribeSeasonDialog.vue': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/components/dialog/SubscribeShareDialog.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/views/reorganize/TransferHistoryView.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/components/dialog/SubscribeShareStatisticsDialog.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/components/dialog/TransferQueueDialog.vue': {
+          branches: 80,
+          functions: 85,
+          lines: 85,
+          statements: 85,
+        },
+        'src/components/dialog/PluginConfigDialog.vue': {
+          branches: 80,
+          functions: 85,
+          lines: 85,
+          statements: 85,
+        },
+        'src/components/dialog/PluginDataDialog.vue': {
+          branches: 80,
+          functions: 85,
+          lines: 85,
+          statements: 85,
+        },
+        'src/composables/useMediaSubscribe.ts': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/composables/useTorrentFilter.ts': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/components/filter/TorrentFilterBar.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/pages/recommend.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/pages/resource.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/pages/media.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/pages/site.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/pages/subscribe.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/stores/auth.ts': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/stores/pluginSidebarNav.ts': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/pages/appcenter.vue': {
+          branches: 80,
+          functions: 85,
+          lines: 85,
+          statements: 85,
+        },
+        'src/utils/permission.ts': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/utils/pluginSidebarNav.ts': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/utils/recommendSources.ts': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/utils/requestOptimizer.ts': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/utils/sseManager.ts': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/utils/federationLoader.ts': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/utils/federationRuntime.ts': {
+          branches: 100,
+          functions: 100,
+          lines: 100,
+          statements: 100,
+        },
+        'src/pages/plugin-app.vue': {
+          branches: 80,
+          functions: 85,
+          lines: 85,
+          statements: 85,
+        },
+        'src/utils/searchStream.ts': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/views/dashboard/MediaRecommend.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/views/discover/MediaCardSlideView.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/pages/discover.vue': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/views/discover/MediaCardListView.vue': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/views/discover/MediaDetailView.vue': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/pages/browse.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/components/dialog/DiscoverTabOrderDialog.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/components/dialog/SiteResourceDialog.vue': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/components/dialog/SiteUserDataDialog.vue': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/components/dialog/AddDownloadDialog.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/components/dialog/AddSubtitleDownloadDialog.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/components/dialog/ReorganizeDialog.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/views/discover/TheMovieDbView.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/views/discover/DoubanView.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/views/discover/BangumiView.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/views/discover/ExtraSourceView.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/components/cards/MediaCard.vue': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/components/cards/SiteCard.vue': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/components/cards/DownloadingCard.vue': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/utils/siteIconCache.ts': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/components/slide/VirtualSlideView.vue': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/views/discover/PersonCardSlideView.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/utils/mediaStatusCache.ts': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/views/site/SiteCardListView.vue': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/views/reorganize/DownloadingListView.vue': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/views/subscribe/FullCalendarView.vue': {
+          branches: 85,
+          functions: 90,
+          lines: 90,
+          statements: 90,
+        },
+        'src/views/subscribe/SubscribeListView.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/views/subscribe/SubscribePopularView.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+        'src/views/subscribe/SubscribeShareView.vue': {
+          branches: 75,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
+      },
+    },
+  },
+}))

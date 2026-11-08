@@ -1,0 +1,185 @@
+import inspect
+import sys
+from typing import Callable
+
+from app.helper.redis import RedisHelper, AsyncRedisHelper
+
+# SitesHelper涉及资源包拉取，提前引入并容错提示
+try:
+    from app.helper.sites import SitesHelper  # noqa
+except ImportError as e:
+    SitesHelper = None
+    error_message = f"错误: {str(e)}\n站点认证及索引相关资源导入失败，请尝试重建容器或手动拉取资源"
+    print(error_message, file=sys.stderr)
+    sys.exit(1)
+
+from app.utils.system import SystemUtils
+from app.log import logger
+from app.core.config import settings
+from app.core.module import ModuleManager
+from app.core.event import EventManager
+from app.helper.thread import ThreadHelper
+from app.helper.display import DisplayHelper
+from app.helper.doh import DohHelper
+from app.helper.resource import ResourceHelper
+from app.helper.message import MessageHelper, stop_message
+from app.helper.server import MoviePilotServerHelper
+from app.db import close_database
+from app.db.systemconfig_oper import SystemConfigOper
+from app.command import CommandChain
+from app.schemas import Notification, NotificationType
+from app.schemas.types import SystemConfigKey
+from app.startup.agent_initializer import init_agent, stop_agent
+
+
+def start_frontend():
+    """
+    启动前端服务
+    """
+    # 仅Windows可执行文件支持内嵌nginx
+    if not SystemUtils.is_frozen() \
+            or not SystemUtils.is_windows():
+        return
+    # 临时Nginx目录
+    nginx_path = settings.ROOT_PATH / 'nginx'
+    if not nginx_path.exists():
+        return
+    # 配置目录下的Nginx目录
+    run_nginx_dir = settings.CONFIG_PATH.with_name('nginx')
+    if not run_nginx_dir.exists():
+        # 移动到配置目录
+        SystemUtils.move(nginx_path, run_nginx_dir)
+    # 启动Nginx
+    import subprocess
+    subprocess.Popen("start nginx.exe",
+                     cwd=run_nginx_dir,
+                     shell=True)
+
+
+def stop_frontend():
+    """
+    停止前端服务
+    """
+    if not SystemUtils.is_frozen() \
+            or not SystemUtils.is_windows():
+        return
+    import subprocess
+    subprocess.Popen(f"taskkill /f /im nginx.exe", shell=True)
+
+
+def clear_temp():
+    """
+    清理临时文件和图片缓存
+    """
+    # 清理临时目录中3天前的文件
+    SystemUtils.clear(settings.TEMP_PATH, days=settings.TEMP_FILE_DAYS)
+    # 清理图片缓存目录中7天前的文件
+    SystemUtils.clear(settings.CACHE_PATH / "images", days=settings.GLOBAL_IMAGE_CACHE_DAYS)
+    # 清理 pip/uv 包下载缓存，不接管整个 .cache 目录。
+    clear_package_tool_cache()
+
+
+def clear_package_tool_cache():
+    """
+    清理 pip/uv 包下载缓存，只处理 MoviePilot 管理的工具子目录。
+    """
+    days = settings.PACKAGE_CACHE_DAYS
+    if days <= 0:
+        return
+    tool_cache_root = settings.PACKAGE_CACHE_PATH
+    for child in ("pip", "uv"):
+        cache_path = tool_cache_root / child
+        try:
+            SystemUtils.clear(cache_path, days=days)
+        except Exception as err:
+            logger.warning("清理包下载缓存失败：%s - %s", cache_path, err)
+
+
+def user_auth():
+    """
+    用户认证检查
+    """
+    sites_helper = SitesHelper()
+    if sites_helper.auth_level >= 2:
+        return
+    auth_conf = SystemConfigOper().get(SystemConfigKey.UserSiteAuthParams)
+    status, msg = sites_helper.check_user(**auth_conf) if auth_conf else sites_helper.check_user()
+    if status:
+        logger.info(f"{msg} 用户认证成功")
+    else:
+        logger.info(f"用户认证失败，{msg}")
+
+
+def check_auth():
+    """
+    检查认证状态
+    """
+    if SitesHelper().auth_level < 2:
+        err_msg = "用户认证失败，站点相关功能将无法使用！"
+        MessageHelper().put(f"注意：{err_msg}", title="用户认证", role="system")
+        CommandChain().post_message(
+            Notification(
+                mtype=NotificationType.Manual,
+                title="MoviePilot用户认证",
+                text=err_msg,
+                link=settings.MP_DOMAIN('#/site')
+            )
+        )
+
+
+async def stop_modules():
+    """
+    服务关闭
+    """
+    async def run_step(name: str, callback: Callable[[], object]) -> None:
+        """单个模块资源关闭失败时继续执行后续阶段"""
+        try:
+            result = callback()
+            if inspect.isawaitable(result):
+                await result
+        except Exception as err:
+            logger.error(f"关闭{name}失败：{err}")
+
+    await run_step("AI智能体", stop_agent)
+    await run_step("模块", lambda: ModuleManager().stop())
+    await run_step("事件消费", lambda: EventManager().stop())
+    await run_step("虚拟显示", lambda: DisplayHelper().stop())
+    await run_step("DoH服务", lambda: DohHelper().shutdown())
+    await run_step("线程池", lambda: ThreadHelper().shutdown())
+    await run_step("消息服务", stop_message)
+    await run_step("Redis缓存连接", lambda: RedisHelper().close())
+    await run_step("异步Redis缓存连接", lambda: AsyncRedisHelper().close())
+    await run_step("数据库连接", close_database)
+    await run_step("前端服务", stop_frontend)
+    await run_step("临时文件", clear_temp)
+
+
+def init_modules():
+    """
+    启动模块
+    """
+    # 虚拟显示
+    DisplayHelper()
+    # DoH
+    DohHelper()
+    # 站点管理
+    SitesHelper()
+    # 资源包检测
+    ResourceHelper()
+    # 用户认证
+    user_auth()
+    # 加载模块
+    ModuleManager()
+    # 启动事件消费
+    EventManager().start()
+    # 初始化共享服务端状态
+    MoviePilotServerHelper.init_plugin_report()
+    MoviePilotServerHelper.init_subscribe_report()
+    MoviePilotServerHelper.get_user_uuid()
+    MoviePilotServerHelper.get_github_user()
+    # 初始化AI智能体
+    init_agent()
+    # 启动前端服务
+    start_frontend()
+    # 检查认证状态
+    check_auth()

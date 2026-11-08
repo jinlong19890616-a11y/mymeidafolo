@@ -1,0 +1,165 @@
+import json
+import platform
+import sys
+from pathlib import Path
+
+from app.core.config import settings
+from app.helper.sites import SitesHelper  # noqa
+from app.helper.system import SystemHelper
+from app.log import logger
+from app.utils.http import RequestUtils
+from app.utils.string import StringUtils
+from app.utils.system import SystemUtils
+
+
+class ResourceHelper:
+    """
+    检测和更新资源包
+    """
+
+    _base_dir: Path = settings.ROOT_PATH
+
+    def __init__(self):
+        self.check()
+
+    @property
+    def proxies(self):
+        return None if settings.GITHUB_PROXY else settings.PROXY
+
+    @staticmethod
+    def _get_python_version_tag() -> str:
+        version = sys.version_info
+        return f"cp{version.major}{version.minor}"
+
+    @staticmethod
+    def _get_machine_tag() -> str:
+        machine = platform.machine().lower()
+        if machine in {"arm64", "aarch64"}:
+            return "aarch64"
+        elif machine in {"x86_64", "amd64"}:
+            return "x86_64"
+        return machine
+
+    @staticmethod
+    def _get_needed_files() -> list[str]:
+        python_version = ResourceHelper._get_python_version_tag()
+        python_ver = python_version.replace("cp", "")
+        system = platform.system().lower()
+        machine = ResourceHelper._get_machine_tag()
+        files = ["user.sites.v2.bin"]
+        if system == "linux":
+            files.append(f"sites.cpython-{python_ver}-{machine}-linux-gnu.so")
+        elif system == "darwin":
+            files.append(f"sites.cpython-{python_ver}-darwin.so")
+        elif system == "windows":
+            files.append(f"sites.cp{python_ver}-win_amd64.pyd")
+        return files
+
+    def check(self):
+        """
+        检测是否有更新，如有则下载安装
+        """
+        if not settings.AUTO_UPDATE_RESOURCE:
+            return None
+        if SystemUtils.is_frozen():
+            return None
+        if not settings.RESOURCE_MANIFEST_URL or not settings.RESOURCE_FILES_API_URL:
+            logger.info("未配置资源包地址，跳过资源包检查")
+            return None
+        logger.info("开始检测资源包版本...")
+        res = RequestUtils(
+            proxies=self.proxies, headers=settings.GITHUB_HEADERS, timeout=10
+        ).get_res(settings.RESOURCE_MANIFEST_URL)
+        if res:
+            try:
+                resource_info = json.loads(res.text)
+                online_version = resource_info.get("version")
+                if online_version:
+                    logger.info(f"最新资源包版本：v{online_version}")
+                    # 需要更新的资源包
+                    need_updates = {}
+                    # 资源明细
+                    resources: dict = resource_info.get("resources") or {}
+                    for rname, resource in resources.items():
+                        rtype = resource.get("type")
+                        platform = resource.get("platform")
+                        target = resource.get("target")
+                        version = resource.get("version")
+                        # 判断平台
+                        if platform and platform != SystemUtils.platform():
+                            continue
+                        # 判断版本号
+                        if rtype == "auth":
+                            # 站点认证资源
+                            local_version = SitesHelper().auth_version
+                        elif rtype == "sites":
+                            # 站点索引资源
+                            local_version = SitesHelper().indexer_version
+                        else:
+                            continue
+                        if StringUtils.compare_version(version, ">", local_version):
+                            logger.info(f"{rname} 资源包有更新，最新版本：v{version}")
+                        else:
+                            continue
+                        # 需要安装
+                        need_updates[rname] = target
+                    if need_updates:
+                        # 下载文件信息列表
+                        r = RequestUtils(
+                            proxies=settings.PROXY,
+                            headers=settings.GITHUB_HEADERS,
+                            timeout=30,
+                        ).get_res(settings.RESOURCE_FILES_API_URL)
+                        if r and not r.ok:
+                            return None, f"连接仓库失败：{r.status_code} - {r.reason}"
+                        elif not r:
+                            return None, "连接仓库失败"
+                        files_info = r.json()
+                        # 下载资源文件
+                        needed_files = self._get_needed_files()
+                        logger.info(f"需要下载的资源文件：{needed_files}")
+                        success = True
+                        for item in files_info:
+                            file_name = item.get("name")
+                            if file_name not in needed_files:
+                                continue
+                            save_path = need_updates.get(file_name)
+                            if not save_path:
+                                continue
+                            if item.get("download_url"):
+                                logger.info(f"开始更新资源文件：{file_name} ...")
+                                download_url = str(item.get("download_url"))
+                                if settings.GITHUB_PROXY:
+                                    download_url = f"{settings.GITHUB_PROXY}{download_url}"
+                                res = RequestUtils(
+                                    proxies=self.proxies,
+                                    headers=settings.GITHUB_HEADERS,
+                                    timeout=180,
+                                ).get_res(download_url)
+                                if not res:
+                                    logger.error(f"文件 {file_name} 下载失败！")
+                                    success = False
+                                    break
+                                elif res.status_code != 200:
+                                    logger.error(
+                                        f"下载文件 {file_name} 失败：{res.status_code} - {res.reason}"
+                                    )
+                                    success = False
+                                    break
+                                file_path = self._base_dir / save_path / file_name
+                                if not file_path.parent.exists():
+                                    file_path.parent.mkdir(parents=True, exist_ok=True)
+                                file_path.write_bytes(res.content)
+                        if success:
+                            logger.info("资源包更新完成，开始重启服务...")
+                            SystemHelper.restart()
+                        else:
+                            logger.warn("资源包更新失败，跳过升级！")
+                    else:
+                        logger.info("所有资源已最新，无需更新")
+            except json.JSONDecodeError:
+                logger.error("资源包仓库数据解析失败！")
+                return None
+        else:
+            logger.warn("无法连接资源包仓库！")
+            return None

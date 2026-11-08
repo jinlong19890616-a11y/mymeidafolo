@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "Node16",
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "composite": false,
+    "strict": true,
+    "moduleResolution": "node16",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+  },
+  "exclude": [
+    "./*.js"
+  ]
+}
