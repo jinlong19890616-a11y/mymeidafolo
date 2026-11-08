@@ -3,25 +3,33 @@ import os
 import threading
 import time
 import uuid
+from datetime import datetime
+from html import escape
 from pathlib import Path
 from typing import Optional
 
 from app.chain import ChainBase
 from app.core.config import global_vars
 from app.db.gdrive_task_oper import GdriveTaskOper
+from app.db.gdrive_task_history_oper import GdriveTaskHistoryOper
 from app.db.systemconfig_oper import SystemConfigOper
 from app.helper.thread import ThreadHelper
 from app.helper.upload import UploadHelper
 from app.helper.gdrive import GdriveHelper
 from app.log import logger
 from app.schemas.gdrive import GdriveUploadCreate, GdriveUploadSettings, GdriveUploadTarget
-from app.schemas.types import SystemConfigKey
+from app.schemas.message import Notification
+from app.schemas.types import EventType, MessageChannel, NotificationType, SystemConfigKey
 
 
 _QUEUE_LOCK = threading.RLock()
 _RUNNING: dict[int, str] = {}
 _CLOSING = False
 _WORKER_ID = f"upload-{os.getpid()}-{uuid.uuid4().hex}"
+_NOTIFICATION_LOCK = threading.Lock()
+_REPORT_SECONDS = 24 * 60 * 60
+_EVENT_LABELS = {"upload_verified": "☁️ 上传核验完成", "cloud_archived": "📦 媒体归档完成",
+                 "strm_generated": "🎬 STRM 生成完成", "failed": "⚠️ 上传链路失败"}
 
 
 class UploadChain(ChainBase):
@@ -36,7 +44,130 @@ class UploadChain(ChainBase):
     def save_settings(cls, value: GdriveUploadSettings) -> None:
         """保存公开账号和并发配置，立即调度满足新限制的等待任务"""
         SystemConfigOper().set(SystemConfigKey.GdriveUploadSettings, value.model_dump())
+        cls._initialize_report()
         cls.dispatch()
+
+    @classmethod
+    def _initialize_report(cls) -> None:
+        if not (cls.get_settings().notifications_enabled or cls.get_settings().daily_report_enabled):
+            return
+        with _NOTIFICATION_LOCK:
+            oper = SystemConfigOper()
+            if not oper.get(SystemConfigKey.GdriveUploadNotificationState):
+                oper.set(SystemConfigKey.GdriveUploadNotificationState, {"window_start": int(time.time())})
+
+    @staticmethod
+    def _display(value: object, limit: int = 220) -> str:
+        return escape(str(value or "—")[:limit])
+
+    @classmethod
+    def _event_text(cls, event, task) -> str:
+        target = task.upload_target or {}
+        size = int(task.source_size or 0)
+        lines = [f"📄 文件：{cls._display(Path(task.src_path).name)}",
+                 f"📏 大小：{size / 1024 ** 2:.2f} MiB（{size} 字节）",
+                 f"👤 账号：{cls._display(task.upload_account_id)}",
+                 f"🔖 任务：#{task.id}", f"🕒 时间：{cls._display(event.created_at)}"]
+        if event.event_type == "upload_verified":
+            lines.append(f"📂 暂存：{cls._display(target.get('path'))}")
+        elif event.event_type == "cloud_archived":
+            lines.extend([f"🗂 分类：{cls._display(Path(task.archive_path or '').parent)}",
+                          f"📂 归档：{cls._display(task.archive_path)}", "✅ 云端位置与文件身份已核验"])
+        elif event.event_type == "strm_generated":
+            lines.extend([f"📂 归档：{cls._display(task.archive_path)}",
+                          f"🔗 STRM：{cls._display(task.strm_path)}", "✅ STRM 已写入；不代表媒体库已完成扫库或播放验收"])
+        else:
+            # 外部异常可能带 OAuth 或会话 URL，通知只携带可定位的阶段，不转发原始异常。
+            lines.extend([f"⛔ 阶段：{cls._display(event.to_stage)}", "详情请查看任务历史；不会自动删除媒体源。"])
+        return "\n".join(lines)
+
+    def _deliver_notification(self, title: str, text: str, source: str) -> bool:
+        message = Notification(channel=MessageChannel.Telegram, source=source or None,
+                               mtype=NotificationType.Other, title=title, text=text, parse_mode="HTML")
+        # 普通 post_message 不返回渠道回执；复用通知模块的确认发送接口，收到成功后才落回执。
+        result = self.send_direct_message(message)
+        if not result or result.success is not True:
+            return False
+        try:
+            self.messageoper.add(**message.model_dump())
+            self.eventmanager.send_event(EventType.NoticeMessage, self._build_notice_message_data(message))
+        except Exception as err:
+            logger.warning(f"Telegram已送达，通知中心记录失败：{type(err).__name__}")
+        return True
+
+    @classmethod
+    def notify_pending(cls) -> None:
+        """补发持久化阶段记录并发送固定二十四小时汇总，通知失败不改变媒体任务。"""
+        config = cls.get_settings()
+        if not (config.notifications_enabled or config.daily_report_enabled):
+            return
+        cls._initialize_report()
+        if not _NOTIFICATION_LOCK.acquire(blocking=False):
+            return
+        try:
+            chain = cls()
+            history = GdriveTaskHistoryOper()
+            if config.notifications_enabled:
+                for event in history.list_notification_events(pending=True, limit=100):
+                    task = GdriveTaskOper().get(event.task_id)
+                    if not task or task.backend != "api":
+                        continue
+                    if not chain._deliver_notification(f"mymeidafolo · {_EVENT_LABELS[event.event_type]}",
+                                                       cls._event_text(event, task), config.notification_source):
+                        break
+                    history.mark_notified(event)
+            if config.daily_report_enabled:
+                chain._send_daily_report(config)
+        except Exception as err:
+            logger.warning(f"上传通知暂未完成，将在下次调度重试：{type(err).__name__}")
+        finally:
+            _NOTIFICATION_LOCK.release()
+
+    def _send_daily_report(self, config: GdriveUploadSettings) -> None:
+        oper = SystemConfigOper()
+        state = oper.get(SystemConfigKey.GdriveUploadNotificationState)
+        start = float(state["window_start"])
+        end = start + _REPORT_SECONDS
+        if time.time() < end:
+            return
+        if not state.get("report"):
+            begin_text = datetime.fromtimestamp(start).strftime("%Y-%m-%d %H:%M:%S")
+            end_text = datetime.fromtimestamp(end).strftime("%Y-%m-%d %H:%M:%S")
+            events = GdriveTaskHistoryOper().list_notification_events(start=begin_text, end=end_text)
+            records = []
+            counts = dict.fromkeys(_EVENT_LABELS, 0)
+            total = 0
+            for event in events:
+                task = GdriveTaskOper().get(event.task_id)
+                if not task or task.backend != "api":
+                    continue
+                counts[event.event_type] += 1
+                if event.event_type == "upload_verified":
+                    total += int(task.source_size or 0)
+                path = task.strm_path if event.event_type == "strm_generated" else task.archive_path
+                records.append(f"{_EVENT_LABELS[event.event_type]} · #{task.id} · {self._display(event.created_at)}\n"
+                               f"{self._display(Path(task.src_path).name)} · {int(task.source_size or 0)} 字节\n"
+                               f"{self._display(path)}")
+            header = (f"🕒 统计窗口（应用本地时间，左闭右开）：\n{begin_text} → {end_text}\n"
+                      f"☁️ 总上传量：{total / 1024 ** 3:.3f} GiB（{total} 字节）\n"
+                      f"上传 {counts['upload_verified']} · 归档 {counts['cloud_archived']} · "
+                      f"STRM {counts['strm_generated']} · 失败 {counts['failed']}\n"
+                      "仅按任务首次核验成功计量，不计重试流量。\n")
+            parts = [header]
+            for record in records or ["本窗口没有上传、归档、STRM 或失败记录。"]:
+                if len(parts[-1]) + len(record) + 2 > 1700:
+                    parts.append("")
+                parts[-1] += "\n\n" + record
+            state["report"] = {"parts": parts, "next_part": 0, "source": config.notification_source}
+            oper.set(SystemConfigKey.GdriveUploadNotificationState, state)
+        report = state["report"]
+        for number in range(report["next_part"], len(report["parts"])):
+            if not self._deliver_notification(f"mymeidafolo · 📊 24小时上传报告 {number + 1}/{len(report['parts'])}",
+                                              report["parts"][number], report["source"]):
+                return
+            report["next_part"] = number + 1
+            oper.set(SystemConfigKey.GdriveUploadNotificationState, state)
+        oper.set(SystemConfigKey.GdriveUploadNotificationState, {"window_start": end})
 
     @classmethod
     def create_task(cls, value: GdriveUploadCreate, dedupe_key: Optional[str] = None) -> tuple[Optional[int], str]:
@@ -218,10 +349,8 @@ class UploadChain(ChainBase):
         remote = helper.upload(task_id, source, target, chunk_size, progress)
         cls._check(task_id)
         cls._verify_source(task, source)
-        if not task.remote_file_id:
-            cls._update_task(task_id, event_type="upload_verified",
-                             detail=f"已核验云端上传文件 {remote['id']}，父目录 {','.join(remote.get('parents', []))}")
         cls._update_task(task_id, remote_file_id=remote["id"], uploaded_size=task.source_size,
+                                 event_type="upload_verified", detail="云端上传文件大小及身份已核验",
                                  status="archiving", stage="archiving", progress=96)
         if target.archive_folder_id:
             helper.archive_uploaded(task_id, target, remote["id"])
@@ -236,7 +365,7 @@ class UploadChain(ChainBase):
             cls._update_task(task_id, status="generating_strm", stage="generating_strm", progress=98)
             cls._check(task_id)
             strm = UploadHelper.write_strm(task_id, output, target.strm_prefix.rstrip("/") + "/" + final_path)
-            cls._update_task(task_id, strm_path=str(strm))
+            cls._update_task(task_id, strm_path=str(strm), event_type="strm_generated", detail="STRM已写入")
             if target.metadata_enabled:
                 cls._update_task(task_id, stage="scraping_metadata", progress=99)
                 paths = GdriveHelper.prepare_strm_metadata(source, strm, root)

@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Column, Integer, Index, String, Text
+from sqlalchemy import Column, Integer, Index, String, Text, exists, func, or_
+from sqlalchemy.orm import aliased
 
 from app.db import Base, db_query, db_update, get_id_column
 
@@ -46,3 +47,32 @@ class GdriveTaskHistory(Base):
         return db.query(cls).filter(cls.task_id == task_id).order_by(
             cls.created_at.asc(), cls.id.asc()
         ).limit(limit).all()
+
+    @classmethod
+    @db_query
+    def list_notification_events(cls, db, start: Optional[str] = None,
+                                 end: Optional[str] = None, pending: bool = False,
+                                 limit: Optional[int] = None) -> list["GdriveTaskHistory"]:
+        """查询首次成功阶段及失败记录，时间采用左闭右开窗口，重试不会重复计量。"""
+        from app.db.models.gdrive_task import GdriveTask
+
+        first = db.query(func.min(cls.id)).filter(cls.event_type.in_(
+            ("upload_verified", "cloud_archived", "strm_generated")
+        )).group_by(cls.task_id, cls.event_type)
+        query = db.query(cls).join(GdriveTask, GdriveTask.id == cls.task_id).filter(
+            GdriveTask.backend == "api", or_(cls.id.in_(first), cls.event_type == "failed")
+        )
+        if start:
+            query = query.filter(cls.created_at >= start)
+        if end:
+            query = query.filter(cls.created_at < end)
+        if pending:
+            sent = aliased(cls)
+            query = query.filter(~exists().where(
+                (sent.task_id == cls.task_id) & (sent.event_type == "telegram_sent")
+                & (sent.detail == cls.id.cast(String))
+            ))
+        query = query.order_by(cls.created_at.asc(), cls.id.asc())
+        if limit:
+            query = query.limit(limit)
+        return query.all()

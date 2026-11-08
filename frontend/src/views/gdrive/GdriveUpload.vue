@@ -160,6 +160,25 @@ onUnmounted(() => {
     <VCard v-if="loaded && user.superUser" title="上传账号与并发">
       <VCardText class="d-flex flex-column ga-3">
         <VSwitch v-model="config.enabled" label="启用直接上传" color="primary" />
+        <VSwitch
+          v-model="config.notifications_enabled"
+          label="发送上传、归档、STRM 与失败记录到 Telegram"
+          color="primary"
+          :disabled="busy"
+        />
+        <VSwitch
+          v-model="config.daily_report_enabled"
+          label="每 24 小时发送上传总量与阶段记录汇总（含零上传）"
+          color="primary"
+          :disabled="busy"
+        />
+        <VTextField
+          v-model="config.notification_source"
+          label="Telegram 通知渠道名称"
+          hint="填写通知中心已启用的 Telegram 渠道名称；留空使用首个可用渠道。共用 Bot 时配置仅发送模式。"
+          persistent-hint
+          :disabled="busy"
+        />
         <div class="upload-settings-grid">
           <VTextField
             v-model.number="config.concurrency"

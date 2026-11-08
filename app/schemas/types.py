@@ -298,6 +298,7 @@ class SystemConfigKey(Enum):
     # Google Drive 挂载目录后处理配置
     GdriveSettings = "GdriveSettings"
     GdriveUploadSettings = "GdriveUploadSettings"
+    GdriveUploadNotificationState = "GdriveUploadNotificationState"
     GdriveRules = "GdriveRules"
     GdriveRuleSequence = "GdriveRuleSequence"
 

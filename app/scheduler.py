@@ -24,6 +24,7 @@ from app.chain.recommend import RecommendChain
 from app.chain.site import SiteChain
 from app.chain.subscribe import SubscribeChain
 from app.chain.transfer import TransferChain
+from app.chain.upload import UploadChain
 from app.chain.workflow import WorkflowChain
 from app.chain.gdrive import GdriveChain
 from app.core.config import settings, global_vars
@@ -765,6 +766,17 @@ class Scheduler(ConfigReloadMixin, metaclass=SingletonClass):
                 id="gdrive_directories",
                 name="Google Drive 目录扫描",
                 seconds=30,
+                max_instances=1,
+                coalesce=True,
+            )
+
+            # 初始化工作流服务
+            self._scheduler.add_job(
+                UploadChain.notify_pending,
+                "interval",
+                id="gdrive_upload_notifications",
+                name="Google Drive 阶段通知与24小时汇总",
+                seconds=60,
                 max_instances=1,
                 coalesce=True,
             )

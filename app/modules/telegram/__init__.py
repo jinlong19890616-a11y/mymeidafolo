@@ -778,6 +778,8 @@ class TelegramModule(_ModuleBase, _MessageBase[Telegram]):
         :param commands: 命令字典
         """
         for client_config in self.get_configs().values():
+            if str(client_config.config.get("TELEGRAM_RECEIVE_ENABLED", True)).lower() in {"false", "0", "no"}:
+                continue
             client = self.get_instance(client_config.name)
             if not client:
                 continue

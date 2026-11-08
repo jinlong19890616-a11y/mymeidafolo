@@ -13,6 +13,8 @@ description: >-
 
 # MoviePilot REST API
 
+上传通知设置：`PUT /api/v1/gdrive/upload/settings` 可保存 `notifications_enabled`、`daily_report_enabled`（默认 false）、`notification_source`（已有 Telegram 渠道名，默认空）。每分钟按任务历史发送上传核验、分类归档核验、STRM 写入及失败记录，首次成功按任务去重。24小时总量只计算首次上传核验的文件大小，含阶段明细和零上传报告，窗口及分段回执持久化。通知仅覆盖 API 上传，不依赖上传总开关；须启用 Telegram 渠道“其它”场景。共用 Bot 时渠道 config 设置 `TELEGRAM_RECEIVE_ENABLED=false`，仅发送、不 polling、不覆盖命令菜单。成功回执前崩溃可能补发同条，不承诺绝对不重复。失败通知不转发原始异常，禁止输出连接凭据。
+
 上传后云端分类：target.folder_id/path 为 drmedia 暂存目标，可选 archive_folder_id/archive_path 为同一共享盘 media 最终目标，strm_prefix 对应 media。目录扫描只预览／冻结分类路径，原整理结构先上传，核验后通过 Drive 移动同一文件 ID 到分类目录；再次核验后才输出 STRM、本地资料和定向扫库。移动响应丢失显式重试先查询原 ID，不自动重发；重名失败保留源文件及暂存文件。archive_folder_id 留空兼容旧流程，新增字段无数据库迁移。
 
 Emby 电视库的扫描入口需直接包含各部剧目录；多层二次分类时，将各最终分类目录加入同一个库。只用本地资料时，在该库关闭在线元数据和图片提供方并启用本地 NFO 读取；lockdata 不代表整个 Emby 服务零联网。上传后处理不会修改既有库的提供方设置。

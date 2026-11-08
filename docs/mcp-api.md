@@ -1,5 +1,9 @@
 # MoviePilot MCP (Model Context Protocol) API 文档
 
+Google Drive 上传通知：`GET/PUT /api/v1/gdrive/upload/settings` 新增 `notifications_enabled=false`、`daily_report_enabled=false`、`notification_source=""`。超级管理员可启用 Telegram 阶段记录与每24小时汇总，指定通知中心已有渠道名称；留空选择首个匹配渠道，须允许“其它”场景。启用后每分钟检查历史，即使上传总开关关闭也继续通知。`upload_verified`、`cloud_archived`、`strm_generated` 按任务首次成功去重，失败按每次失败记录发送。只有实际云端核验或 STRM 写入后才产生成功记录，STRM 成功不代表扫库或播放验收成功。通知发送使用现有渠道的确认接口，确认后写通知中心历史、通知事件及任务回执；发送失败下次调度补发，不改变媒体任务。仅覆盖 API 上传链，旧挂载模式不计入。24小时窗口从首次启用开始，按应用本地时间展示左闭右开窗口，持久化窗口及报告分段进度，零上传也发送；总量按每个任务首次上传核验的 source_size 计量，不计重试流量。报告包含上传、归档、STRM、失败明细并分段，停机后逐窗口补发。Telegram 成功后、回执提交前若进程崩溃，可能补发同一条；Telegram 不提供事务性恰好一次送达，不能保证绝对不重复。
+
+共用 Telegram Bot：通知渠道 config 可设置 `TELEGRAM_RECEIVE_ENABLED=false`，只发送、不启动 polling、不覆盖命令菜单；默认 true 保留旧行为。通知模板使用 HTML 并转义文件名及路径，失败通知不转发可能含凭据的原始异常。Symedia 默认模板若受保护且未配置自定义值，仅参考其归档通知风格，不承诺逐字复刻。
+
 下载器离线整理：当 `TMDB_API_KEY` 显式为空、任务尚无媒体信息且源存储为本地时，整理链可读取已配置下载根内的同名 NFO／movie.nfo，或向上最多三层的 tvshow.nfo。只接受具有标题和数字年份的 movie／tvshow，拒绝符号链接、外部实体及超过 1 MiB 的 NFO；单集标题不会用作剧名。离线身份为 `local_nfo`，不补充 TMDB 信息。下载整理目录应关闭在线刮削及依赖 TMDB 的自动类别目录，由 GDrive 已有分类规则完成上传后的分类归档。若代码默认密钥非空，必须通过系统设置显式保存空值，重启后核验，不能仅省略配置项。
 
 启用本地资料的 GDrive 上传目录收到整理完成事件后，会先把下载源的随片 NFO／图片准备到本地整理目录，再提交上传；此时不生成 STRM。缺资料或内容冲突时停止事件接管并保留源文件。最终 STRM 与旁边资料仍在云端归档核验后生成，随后请求指定媒体库扫描。正式部署需配置下载器下载根、本地整理根、共享盘 drmedia／media 两个不同根、对应 media 的只读播放入口，以及 Emby 可读的 STRM 根；上述目录和服务应分别核验持久化及权限。

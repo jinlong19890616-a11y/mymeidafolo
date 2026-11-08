@@ -98,6 +98,7 @@ class Telegram:
         self._telegram_token = TELEGRAM_TOKEN
         self._telegram_chat_id = TELEGRAM_CHAT_ID
         self._polling_thread = None
+        self._receive_enabled = str(kwargs.get("TELEGRAM_RECEIVE_ENABLED", True)).lower() not in {"false", "0", "no"}
         if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
             logger.error("Telegram配置不完整！")
             return
@@ -121,6 +122,10 @@ class Telegram:
             _bot = TeleBot(self._telegram_token, parse_mode=TELEGRAM_PARSE_MODE_MARKDOWN)
             # 记录句柄
             self._bot = _bot
+            if not self._receive_enabled:
+                self._bot_username = None
+                logger.info("Telegram仅发送模式，不启动消息接收")
+                return
             # 获取并存储bot用户名用于@检测
             try:
                 bot_info = _bot.get_me()

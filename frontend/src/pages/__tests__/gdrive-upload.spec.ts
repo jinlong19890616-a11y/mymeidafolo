@@ -33,6 +33,31 @@ async function fillUpload() {
   await fireEvent.keyDown(screen.getByLabelText('参与上传的账号'), { key: 'Escape' })
 }
 
+it('保存阶段通知、24小时汇总和指定渠道，不启动上传', async () => {
+  const requests: unknown[] = []
+  server.use(
+    http.put(`${url}/upload/settings`, async ({ request }) => {
+      requests.push(await request.json())
+      return HttpResponse.json({ success: true })
+    }),
+  )
+  await renderWithProviders(Upload, { initialState })
+  await fireEvent.click(await screen.findByLabelText('发送上传、归档、STRM 与失败记录到 Telegram'))
+  await fireEvent.click(screen.getByLabelText('每 24 小时发送上传总量与阶段记录汇总（含零上传）'))
+  await fireEvent.update(screen.getByLabelText('Telegram 通知渠道名称'), '上传通知')
+  await fireEvent.click(screen.getByRole('button', { name: '保存上传配置' }))
+  await screen.findByText('上传配置已保存。')
+  expect(requests).toEqual([
+    {
+      ...config,
+      credential_status: undefined,
+      notifications_enabled: true,
+      daily_report_enabled: true,
+      notification_source: '上传通知',
+    },
+  ])
+})
+
 it('保存上传账号和两层并发配置，不创建上传任务', async () => {
   const requests: unknown[] = []
   server.use(
@@ -101,10 +126,12 @@ it('Token 只写提交后清空，返回页面只显示已配置状态', async (
 
 it('分别提交 drmedia 暂存和 media 云端归档目标', async () => {
   const requests: unknown[] = []
-  server.use(http.post(`${url}/upload/tasks`, async ({ request }) => {
-    requests.push(await request.json())
-    return HttpResponse.json({ success: true, data: { id: 11 } })
-  }))
+  server.use(
+    http.post(`${url}/upload/tasks`, async ({ request }) => {
+      requests.push(await request.json())
+      return HttpResponse.json({ success: true, data: { id: 11 } })
+    }),
+  )
   await renderWithProviders(Upload, { initialState })
   await fillUpload()
   await fireEvent.update(screen.getByLabelText('上传暂存相对路径'), '整理/movie.mkv')
@@ -112,9 +139,16 @@ it('分别提交 drmedia 暂存和 media 云端归档目标', async () => {
   await fireEvent.update(await screen.findByLabelText('云端归档相对路径'), '电影/国产/movie.mkv')
   await fireEvent.click(screen.getByRole('button', { name: '开始上传' }))
   await screen.findByText('直接上传任务已入队。')
-  expect(requests).toEqual([expect.objectContaining({ target: expect.objectContaining({
-    folder_id: 'folder', path: '整理/movie.mkv', archive_folder_id: 'media-folder', archive_path: '电影/国产/movie.mkv',
-  }) })])
+  expect(requests).toEqual([
+    expect.objectContaining({
+      target: expect.objectContaining({
+        folder_id: 'folder',
+        path: '整理/movie.mkv',
+        archive_folder_id: 'media-folder',
+        archive_path: '电影/国产/movie.mkv',
+      }),
+    }),
+  ])
 })
 
 it('提交本地元数据开关和明确的 Emby 扫库目标', async () => {

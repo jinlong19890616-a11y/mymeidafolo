@@ -204,6 +204,9 @@ export interface GdriveUploadSettings {
   enabled: boolean
   concurrency: number
   chunk_size_mb: number
+  notifications_enabled?: boolean
+  daily_report_enabled?: boolean
+  notification_source?: string
   accounts: GdriveUploadAccount[]
   credential_status?: Record<string, boolean>
 }

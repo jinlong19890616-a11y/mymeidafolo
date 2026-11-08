@@ -843,6 +843,15 @@ onMounted(() => {
                   prepend-inner-icon="mdi-chat"
                 />
               </VCol>
+              <VCol cols="12">
+                <VSwitch
+                  :model-value="notificationInfo.config.TELEGRAM_RECEIVE_ENABLED !== false"
+                  label="接收 Telegram 消息与注册命令"
+                  hint="与其他实例共用同一 Bot 时关闭，仅发送通知，避免争抢消息或覆盖命令菜单。"
+                  persistent-hint
+                  @update:model-value="notificationInfo.config.TELEGRAM_RECEIVE_ENABLED = $event"
+                />
+              </VCol>
               <VCol cols="12" md="6">
                 <VTextField
                   v-model="notificationInfo.config.TELEGRAM_USERS"

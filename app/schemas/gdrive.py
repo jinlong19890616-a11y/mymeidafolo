@@ -28,6 +28,9 @@ class GdriveUploadSettings(BaseModel):
     enabled: bool = False
     concurrency: int = Field(default=4, ge=1, le=16)
     chunk_size_mb: int = Field(default=16, ge=1, le=64)
+    notifications_enabled: bool = False
+    daily_report_enabled: bool = False
+    notification_source: str = Field(default="", max_length=100)
     accounts: list[GdriveUploadAccount] = Field(default_factory=list, max_length=50)
 
     @model_validator(mode="after")
