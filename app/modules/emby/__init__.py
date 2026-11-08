@@ -226,6 +226,11 @@ class EmbyModule(_ModuleBase, _MediaServerBase[Emby]):
             return server_obj.get_librarys(username=username, hidden=hidden)
         return None
 
+    def mediaserver_refresh_library(self, server: str, library_id: str) -> Optional[bool]:
+        """请求指定 Emby 媒体库扫描，不触发全库刷新"""
+        server_obj: Emby = self.get_instance(server)
+        return server_obj.refresh_library(library_id) if server_obj else None
+
     def mediaserver_items(self, server: str, library_id: Union[str, int], start_index: Optional[int] = 0,
                           limit: Optional[int] = -1) -> Optional[Generator]:
         """

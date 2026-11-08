@@ -297,6 +297,9 @@ class SystemConfigKey(Enum):
     MediaRecognizeShareCount = "MediaRecognizeShareCount"
     # Google Drive 挂载目录后处理配置
     GdriveSettings = "GdriveSettings"
+    GdriveUploadSettings = "GdriveUploadSettings"
+    GdriveRules = "GdriveRules"
+    GdriveRuleSequence = "GdriveRuleSequence"
 
 
 # 处理进度Key字典

@@ -192,7 +192,7 @@ onUnmounted(() => {
 
 <style scoped>
 .gdrive-paths dt {
-  color: rgb(var(--v-theme-on-surface-variant));
+  color: rgba(var(--v-theme-on-surface), 0.7);
   margin-block-start: 0.75rem;
   font-size: 0.8rem;
 }

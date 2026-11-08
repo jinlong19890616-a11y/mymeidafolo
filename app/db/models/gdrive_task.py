@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import BigInteger, Boolean, Column, Index, Integer, String, Text, or_
+from sqlalchemy import BigInteger, Boolean, Column, Index, Integer, JSON, String, Text, or_
 
 from app.db import Base, db_query, db_update, get_id_column
 from app.db.models.gdrive_task_history import GdriveTaskHistory
@@ -19,6 +19,12 @@ class GdriveTask(Base):
     src_path = Column(Text, nullable=False)
     archive_path = Column(Text)
     strm_path = Column(Text)
+    strm_root = Column(Text)
+    archive_root = Column(Text)
+    backend = Column(String, nullable=False, default="mount", server_default="mount")
+    upload_target = Column(JSON)
+    upload_account_id = Column(String)
+    remote_file_id = Column(String)
     source_size = Column(BigInteger, nullable=False, default=0)
     source_device = Column(BigInteger)
     source_inode = Column(BigInteger)
@@ -33,6 +39,7 @@ class GdriveTask(Base):
     media_type = Column(String)
     title = Column(String)
     transfer_history_id = Column(Integer, index=True)
+    dedupe_key = Column(String, unique=True)
     lease_owner = Column(String)
     lease_until = Column(String)
     created_at = Column(String, nullable=False)

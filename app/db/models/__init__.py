@@ -19,3 +19,7 @@ from .userconfig import UserConfig
 from .workflow import Workflow
 from .gdrive_task import GdriveTask
 from .gdrive_task_history import GdriveTaskHistory
+from .gdrive_directory import GdriveDirectory
+from .gdrive_scan import GdriveScan
+from .gdrive_scan_item import GdriveScanItem
+from .gdrive_media import GdriveMedia

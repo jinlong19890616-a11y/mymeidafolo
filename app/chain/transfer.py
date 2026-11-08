@@ -29,6 +29,7 @@ from app.db.transferhistory_oper import TransferHistoryOper
 from app.helper.directory import DirectoryHelper
 from app.helper.format import EpisodeFormatRuleHelper, FormatParser
 from app.helper.progress import ProgressHelper
+from app.helper.nfo import NfoReader
 from app.log import logger
 from app.schemas import StorageOperSelectionEventData
 from app.schemas import (
@@ -1788,6 +1789,13 @@ class TransferChain(ChainBase, ConfigReloadMixin, metaclass=Singleton):
             # 识别
             transferhis = TransferHistoryOper()
             mediainfo = task.mediainfo
+            if not mediainfo and not settings.TMDB_API_KEY and task.fileitem.storage == 'local':
+                source = Path(task.fileitem.path)
+                directory = DirectoryHelper().get_dir(
+                    None, include_unsorted=True, storage='local', src_path=source,
+                )
+                if directory and directory.download_path:
+                    mediainfo = NfoReader.read_media(source, Path(directory.download_path))
             mediainfo_changed = False
             need_obtain_images = False
             if not mediainfo:
@@ -1918,7 +1926,8 @@ class TransferChain(ChainBase, ConfigReloadMixin, metaclass=Singleton):
                 mediainfo_changed = True
 
             # TMDB 仅作为辅助信息合并，不能改变原识别源的主身份和标题。
-            mediainfo = MediaChain().supplement_tmdb_info(mediainfo, task.meta)
+            if mediainfo.source != 'local_nfo':
+                mediainfo = MediaChain().supplement_tmdb_info(mediainfo, task.meta)
             task.mediainfo = mediainfo
 
             # 只有 TMDB 主源沿用历史 TMDB 标题，避免辅助 ID 改写其它识别源标题。

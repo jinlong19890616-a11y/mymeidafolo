@@ -81,7 +81,8 @@ def test_write_strm_link_io_error_is_not_converted_to_direct_write(tmp_path, mon
     assert strm.with_name(".movie.strm.92.mymediafolo.claim").exists()
 
 
-def test_process_task_deletes_source_only_after_strm_success(tmp_path, monkeypatch):
+@pytest.mark.parametrize("separate_library", [False, True])
+def test_process_task_deletes_source_only_after_strm_success(tmp_path, monkeypatch, separate_library):
     """上传或 STRM 失败时必须保留源文件，全部成功后才删除。"""
     source = tmp_path / "source" / "movie.mkv"
     source.parent.mkdir()
@@ -104,6 +105,9 @@ def test_process_task_deletes_source_only_after_strm_success(tmp_path, monkeypat
         remove_source=True,
         retry_count=0,
     )
+    if separate_library:
+        task.strm_root = str(tmp_path / "library")
+        task.archive_root = str(mount)
 
     class FakeOper:
         def get(self, task_id):
@@ -133,7 +137,10 @@ def test_process_task_deletes_source_only_after_strm_success(tmp_path, monkeypat
 
     archive = mount / "movie.mkv"
     assert archive.read_bytes() == b"movie-content"
-    assert (source.with_suffix(".strm")).read_text(encoding="utf-8") == f"{archive}\n"
+    output = tmp_path / "library/movie.strm" if separate_library else source.with_suffix(".strm")
+    assert output.read_text(encoding="utf-8") == f"{archive}\n"
+    if separate_library:
+        assert not source.with_suffix(".strm").exists()
     assert not source.exists()
     assert task.status == GdriveTaskStatus.COMPLETED.value
 

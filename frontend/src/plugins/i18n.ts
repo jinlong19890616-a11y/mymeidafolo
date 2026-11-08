@@ -6,6 +6,7 @@ import { SUPPORTED_LOCALES, SupportedLocale } from '@/types/i18n'
 import zhCN from '@/locales/zh-CN'
 import zhTW from '@/locales/zh-TW'
 import enUS from '@/locales/en-US'
+import { gdriveStudioZh, gdriveStudioTw, gdriveStudioEn } from '@/utils/gdrive-studio'
 
 // 创建 i18n 实例
 const i18n = createI18n({
@@ -13,9 +14,9 @@ const i18n = createI18n({
   locale: getBrowserLocale() || 'zh-CN', // 默认语言
   fallbackLocale: 'zh-CN', // 回退语言
   messages: {
-    'zh-CN': zhCN,
-    'zh-TW': zhTW,
-    'en-US': enUS,
+    'zh-CN': { ...zhCN, gdrive: { ...zhCN.gdrive, studio: gdriveStudioZh } },
+    'zh-TW': { ...zhTW, gdrive: { ...zhTW.gdrive, studio: gdriveStudioTw } },
+    'en-US': { ...enUS, gdrive: { ...enUS.gdrive, studio: gdriveStudioEn } },
   },
   silentTranslationWarn: true,
   silentFallbackWarn: true,

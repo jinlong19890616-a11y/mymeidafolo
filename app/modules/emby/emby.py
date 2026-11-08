@@ -596,6 +596,26 @@ class Emby:
             return False
         return False
 
+    def refresh_library(self, library_id: str) -> bool:
+        """确认媒体库 ID 存在后请求扫描，保留已有本地元数据和图片"""
+        if not self._host or not self._apikey or not library_id:
+            return False
+        if not any(str(folder.get("Id")) == str(library_id) for folder in self.folders):
+            logger.error("Emby 扫库目标不是当前服务器的媒体库")
+            return False
+        response = RequestUtils(timeout=30).post_res(
+            f"{self._host}emby/Items/{library_id}/Refresh",
+            headers={"X-Emby-Token": self._apikey},
+            params={"Recursive": "true", "MetadataRefreshMode": "Default", "ImageRefreshMode": "Default",
+                    "ReplaceAllMetadata": "false", "ReplaceAllImages": "false"},
+        )
+        if response is None:
+            return False
+        try:
+            return response.status_code in {200, 202, 204}
+        finally:
+            response.close()
+
     def refresh_root_library(self) -> bool:
         """
         通知Emby刷新整个媒体库

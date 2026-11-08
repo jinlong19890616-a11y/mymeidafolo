@@ -155,4 +155,4 @@ def test_cleanup_rejects_arbitrary_strm_path(tmp_path, monkeypatch):
     result = GdriveChain.cleanup_task(task.id, dry_run=False)
 
     assert not result.can_cleanup
-    assert "STRM 路径不符合源文件映射" in result.message
+    assert "STRM 路径不符合归档映射" in result.message

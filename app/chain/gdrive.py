@@ -2,6 +2,7 @@ import errno
 import calendar
 import hashlib
 import os
+import re
 import socket
 import threading
 import time
@@ -11,17 +12,23 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Optional
 
+from sqlalchemy.exc import IntegrityError
+
 from app.chain import ChainBase
-from app.core.config import settings
+from app.core.config import global_vars, settings
 from app.core.event import Event, eventmanager
 from app.db.gdrive_task_oper import GdriveTaskOper
+from app.db.gdrive_directory_oper import GdriveDirectoryOper
 from app.db.systemconfig_oper import SystemConfigOper
+from app.db.transferhistory_oper import TransferHistoryOper
+from app.helper.gdrive import GdriveHelper
 from app.log import logger
 from app.schemas.gdrive import (
     GdrivePreflightCheck,
     GdrivePreflightResult,
     GdriveSettings,
     GdriveTaskCleanupResult,
+    GdriveDirectoryConfig,
 )
 from app.schemas.types import EventType, GdriveTaskStatus, SystemConfigKey
 
@@ -184,6 +191,8 @@ class GdriveChain(ChainBase):
     @classmethod
     def resume_pending_tasks(cls) -> None:
         """恢复进程重启前未完成的任务。"""
+        from app.chain.upload import UploadChain
+        UploadChain.dispatch()
         config = cls.get_settings()
         if not config.enabled:
             return
@@ -193,6 +202,8 @@ class GdriveChain(ChainBase):
         if release_expired_leases:
             release_expired_leases(now)
         for task in oper.list_unfinished():
+            if getattr(task, "backend", "mount") == "api":
+                continue
             if task.status in {
                 GdriveTaskStatus.PENDING.value,
                 GdriveTaskStatus.UPLOADING.value,
@@ -215,6 +226,9 @@ class GdriveChain(ChainBase):
         transfer_history_id: Optional[int] = None,
         media_type: Optional[str] = None,
         title: Optional[str] = None,
+        dedupe_key: Optional[str] = None,
+        strm_root: Optional[str] = None,
+        archive_root: Optional[str] = None,
     ) -> tuple[Optional[int], str]:
         """
         创建任务并异步启动处理。
@@ -229,7 +243,10 @@ class GdriveChain(ChainBase):
         """
         try:
             return cls._create_task(source_path, archive_path, remove_source,
-                                    transfer_history_id, media_type, title), ""
+                                    transfer_history_id, media_type, title, dedupe_key, strm_root, archive_root), ""
+        except IntegrityError:
+            existing_id = GdriveDirectoryOper.find_task(dedupe_key) if dedupe_key else None
+            return existing_id, "" if existing_id else "源文件已由另一批次提交，请刷新后查看"
         except (OSError, RuntimeError, ValueError) as err:
             logger.warning(f"创建 Google Drive 任务失败：{err}")
             return None, str(err)
@@ -238,6 +255,8 @@ class GdriveChain(ChainBase):
     def _create_task(
         cls, source_path: str, archive_path: Optional[str], remove_source: Optional[bool],
         transfer_history_id: Optional[int], media_type: Optional[str], title: Optional[str],
+        dedupe_key: Optional[str] = None,
+        strm_root: Optional[str] = None, archive_root: Optional[str] = None,
     ) -> int:
         """创建任务，错误交给公开接口转换为领域结果。"""
         config = cls.get_settings()
@@ -249,6 +268,8 @@ class GdriveChain(ChainBase):
         if not source.is_file():
             raise FileNotFoundError(f"源文件不存在：{source}")
         source_stat = source.stat()
+        if dedupe_key and cls._directory_fingerprint(source, Path(archive_path)) != dedupe_key:
+            raise ValueError("源文件在扫描后发生变化，请重新扫描")
         source_sha256 = cls._file_digest(source)
         current_stat = source.stat()
         if (
@@ -260,8 +281,15 @@ class GdriveChain(ChainBase):
             raise IOError(f"源文件在创建任务时发生变化：{source}")
         existing = GdriveTaskOper().get_active_by_source(source.as_posix())
         if existing:
+            if dedupe_key and existing.dedupe_key != dedupe_key:
+                raise ValueError("源文件已有其他活动任务，请等待其完成")
             cls().start_task(existing.id)
             return existing.id
+        extra = {"dedupe_key": dedupe_key} if dedupe_key else {}
+        if strm_root:
+            extra.update(strm_root=strm_root, archive_root=archive_root)
+            mount_root = Path(config.mount_path).resolve()
+            cls._task_strm_path(SimpleNamespace(src_path=source.as_posix(), **extra), Path(archive_path), mount_root)
         task = GdriveTaskOper().add(
             src_path=source.as_posix(),
             archive_path=archive_path,
@@ -277,14 +305,275 @@ class GdriveChain(ChainBase):
             media_type=media_type,
             title=title,
             transfer_history_id=transfer_history_id,
+            **extra,
         )
         cls().start_task(task.id)
         return task.id
+
+    @staticmethod
+    def directory_paths(value: GdriveDirectoryConfig) -> tuple[Optional[tuple[Path, Path]], str]:
+        """验证目录隔离和挂载范围，不创建目录或写入文件"""
+        config = GdriveChain.get_settings()
+        source = Path(value.source_path)
+        target = Path(value.archive_path)
+        if value.upload_target:
+            if source.resolve() != source:
+                return None, "源目录必须规范化且不能包含符号链接"
+            if value.strm_root:
+                output = Path(value.strm_root)
+                if output.resolve() != output or output == source or output in source.parents or source in output.parents:
+                    return None, "STRM 根目录必须与源目录隔离且不能包含符号链接"
+                if not value.upload_target.strm_prefix:
+                    return None, "直接上传生成 STRM 需要播放路径或地址前缀"
+            return (source, target), ""
+        mount = Path(config.mount_path).expanduser().resolve() if config.mount_path else None
+        if source.resolve() != source or target.resolve() != target:
+            return None, "目录路径必须规范化且不能包含符号链接"
+        if source == target or source in target.parents or target in source.parents:
+            return None, "源目录与归档目录不能相同或相互嵌套"
+        if mount is None or (target != mount and mount not in target.parents):
+            return None, "归档目录必须位于已配置的挂载目录内"
+        if value.strm_root:
+            output = Path(value.strm_root)
+            if output.resolve() != output:
+                return None, "STRM 根目录必须规范化且不能包含符号链接"
+            if any(output == root or output in root.parents or root in output.parents for root in (source, mount)):
+                return None, "STRM 根目录必须与源目录及挂载目录隔离"
+        return (source, target), ""
+
+    @classmethod
+    def scan_directory(cls, directory_id: int, dry_run: bool = True,
+                       trigger: str = "manual") -> tuple[Optional[int], str]:
+        """建立扫描批次并异步遍历目录，缺省只记录预览"""
+        value = GdriveDirectoryOper.get(directory_id)
+        if value is None:
+            return None, "目录任务不存在"
+        if not dry_run:
+            from app.chain.upload import UploadChain
+            enabled = UploadChain.get_settings().enabled if value.upload_target else cls.get_settings().enabled
+            if not enabled:
+                return None, "所选传输功能尚未启用"
+        try:
+            policy = cls.category_snapshot(value)
+        except (OSError, ValueError) as err:
+            return None, str(err)
+        scan_id, error = GdriveDirectoryOper.begin_scan(directory_id, dry_run, trigger, policy,
+                                                       expected_revision=value.revision)
+        if not scan_id:
+            return None, error
+        try:
+            cls._submit_scan(scan_id, dry_run)
+        except RuntimeError as err:
+            GdriveDirectoryOper.finish_scan(scan_id, str(err))
+            return None, str(err)
+        return scan_id, ""
+
+    @staticmethod
+    def category_snapshot(value: GdriveDirectoryConfig) -> dict:
+        """冻结本批次的自定义或 MoviePilot 二级分类条件"""
+        if value.classification_mode == "moviepilot":
+            return GdriveHelper.read_category_policy(settings.CONFIG_PATH / "category.yaml", value.category_policy).model_dump()
+        return value.category_policy.model_dump()
+
+    @classmethod
+    def _offline_media(cls, path: Path, root: Path) -> dict:
+        media = GdriveHelper.read_nfo(path, root)
+        history = TransferHistoryOper().get_by_dest(path.as_posix(), "local")
+        if history and history.status:
+            media.update(GdriveHelper.media_snapshot(history))
+        media.update(GdriveDirectoryOper.get_media(path.as_posix(), cls._directory_fingerprint(path, path)))
+        return media
+
+    @classmethod
+    def _submit_scan(cls, scan_id: int, dry_run: bool) -> None:
+        global _TASK_EXECUTOR
+        with _TASK_LOCK:
+            if _EXECUTOR_CLOSING or global_vars.is_system_stopped:
+                raise RuntimeError("Google Drive 任务执行器正在关闭")
+            if _TASK_EXECUTOR is None:
+                _TASK_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="gdrive")
+            _TASK_EXECUTOR.submit(cls._scan_directory, scan_id, dry_run)
+
+    @staticmethod
+    def _directory_fingerprint(source: Path, target: Path) -> str:
+        stat = source.stat()
+        identity = f"{source}:{target}:{stat.st_dev}:{stat.st_ino}:{stat.st_size}:{stat.st_mtime_ns}"
+        return hashlib.sha256(identity.encode()).hexdigest()
+
+    @classmethod
+    def _scan_directory(cls, scan_id: int, dry_run: bool) -> None:
+        """有限遍历并记录所有过滤结果，完成遍历后才允许逐个入队"""
+        oper = GdriveDirectoryOper
+        try:
+            event_paths = oper.event_paths(scan_id)
+            event_media = oper.event_media(scan_id)
+            if event_paths is not None and not oper.claim_event(scan_id):
+                return
+            value = oper.get_config(scan_id)
+            rule = oper.get_rule_snapshot(scan_id)
+            paths, error = cls.directory_paths(value)
+            if error:
+                raise ValueError(error)
+            source, target = paths
+            if not source.is_dir():
+                raise ValueError("源目录不存在或不可访问")
+            config = cls.get_settings()
+            mount = Path(config.mount_path).resolve()
+            if not value.upload_target and not mount.is_mount():
+                raise ValueError("配置路径不是系统真实挂载点")
+            if not dry_run and not value.upload_target and not config.enabled:
+                raise ValueError("Google Drive 后处理尚未启用")
+            rows = []
+            visited = 0
+            def walk_error(err: OSError) -> None:
+                raise err
+            entries = (((str(Path(path).parent), [], [Path(path).name]) for path in event_paths)
+                       if event_paths is not None else os.walk(source, followlinks=False, onerror=walk_error))
+            for current, directories, files in entries:
+                if global_vars.is_system_stopped:
+                    raise RuntimeError("服务正在关闭，扫描已中断")
+                visited += len(directories) + len(files)
+                if visited > 10000:
+                    raise ValueError("扫描超过 10000 个目录项，请缩小源目录范围；本批次未入队")
+                directories[:] = sorted(name for name in directories if (
+                    value.recursive and not (Path(current) / name).is_symlink()
+                    and not (Path(current) / name).is_mount()
+                    and not any(word in (Path(current) / name).relative_to(source).as_posix().lower()
+                                for word in value.ignore_keywords)
+                ))
+                for filename in sorted(files):
+                    path = Path(current) / filename
+                    relative = path.relative_to(source)
+                    destination = target / relative
+                    lower = relative.as_posix().lower()
+                    size = 0
+                    fingerprint = None
+                    if not value.recursive and path.parent != source:
+                        reason = "nonrecursive"
+                    elif path.is_symlink() or path.resolve() != path or any(
+                        parent.is_mount() for parent in path.parents if parent != source and source in parent.parents
+                    ):
+                        reason = "symlink"
+                    elif not path.is_file():
+                        reason = "not_file"
+                    elif any(word in lower for word in value.ignore_keywords):
+                        reason = "keyword"
+                    elif any(lower.endswith(suffix) for suffix in value.ignore_suffixes):
+                        reason = "ignored_suffix"
+                    elif path.suffix.lower() not in value.extensions:
+                        reason = "extension"
+                    else:
+                        stat = path.stat()
+                        size = stat.st_size
+                        if size < value.min_size_mb * 1024 * 1024:
+                            reason = "too_small"
+                        elif event_paths is None and time.time() - stat.st_mtime < value.settle_seconds:
+                            reason = "unsettled"
+                        else:
+                            reason = "matched"
+                            frozen = event_media.get(path.as_posix())
+                            if frozen and frozen["signature"] != cls._directory_fingerprint(path, path):
+                                reason = "error: 整理事件后的源文件发生变化，请重新扫描"
+                            if reason == "matched" and (rule or value.classification_mode != "inherit"):
+                                try:
+                                    if frozen:
+                                        media = frozen["media"]
+                                    else:
+                                        media = cls._offline_media(path, source)
+                                    destination = target / GdriveHelper.directory_relative(value, rule, path, media)
+                                except ValueError as err:
+                                    reason = f"error: {err}"
+                            if reason == "matched":
+                                if not value.upload_target and (destination.resolve() != destination or mount not in destination.parents):
+                                    raise ValueError(f"目标路径越界或包含符号链接：{destination}")
+                                fingerprint = cls._directory_fingerprint(path, destination)
+                                if value.upload_target:
+                                    import json
+                                    fingerprint = hashlib.sha256((fingerprint + json.dumps(
+                                        value.upload_target.model_dump(), sort_keys=True,
+                                    )).encode()).hexdigest()
+                                reason = "already_seen" if oper.find_task(fingerprint) else "matched"
+                    rows.append({
+                        "source_path": path.as_posix(), "archive_path": None if reason.startswith("error:") else destination.as_posix(),
+                        "size": size, "fingerprint": fingerprint, "reason": reason,
+                    })
+                    if len(rows) >= 100:
+                        oper.add_items(scan_id, rows)
+                        rows = []
+            if rows:
+                oper.add_items(scan_id, rows)
+            if not dry_run:
+                for item in oper.candidates(scan_id):
+                    if global_vars.is_system_stopped:
+                        raise RuntimeError("服务正在关闭，未入队文件保留在源目录")
+                    path = Path(item["source_path"])
+                    destination = Path(item["archive_path"])
+                    paths, error = cls.directory_paths(value)
+                    if error or (not value.upload_target and (not mount.is_mount() or destination.resolve() != destination)):
+                        raise ValueError(error or "挂载点或目标目录在扫描后发生变化")
+                    current_fingerprint = cls._directory_fingerprint(path, destination) if path.is_file() else None
+                    if value.upload_target and current_fingerprint:
+                        import json
+                        current_fingerprint = hashlib.sha256((current_fingerprint + json.dumps(
+                            value.upload_target.model_dump(), sort_keys=True,
+                        )).encode()).hexdigest()
+                    if (not path.is_file() or path.is_symlink() or path.resolve() != path
+                            or current_fingerprint != item["fingerprint"]):
+                        oper.fail_item(item["id"], "源文件在扫描后发生变化，请重新扫描")
+                        continue
+                    task_id = oper.find_task(item["fingerprint"])
+                    if task_id is None:
+                        output = {"strm_root": value.strm_root, "archive_root": target.as_posix()} if value.strm_root else {}
+                        if value.upload_target:
+                            from app.chain.upload import UploadChain
+                            from app.schemas.gdrive import GdriveUploadCreate
+                            upload_target = value.upload_target.model_copy(deep=True)
+                            if upload_target.archive_folder_id:
+                                upload_target.archive_path = (Path(upload_target.archive_path) / destination.relative_to(target)).as_posix()
+                                upload_target.path = (Path(upload_target.path) / path.relative_to(source)).as_posix()
+                            else:
+                                upload_target.path = (Path(upload_target.path) / destination.relative_to(target)).as_posix()
+                            task_id, task_error = UploadChain.create_task(GdriveUploadCreate(
+                                source_path=str(path), target=upload_target, strm_root=value.strm_root,
+                                remove_source=value.remove_source,
+                            ), dedupe_key=item["fingerprint"])
+                        else:
+                            task_id, task_error = cls.create_task(
+                                path.as_posix(), destination.as_posix(), value.remove_source,
+                                dedupe_key=item["fingerprint"], **output,
+                            )
+                        if not task_id:
+                            oper.fail_item(item["id"], task_error)
+                            continue
+                    oper.link_task(item["id"], task_id)
+            oper.finish_scan(scan_id)
+            oper.reconcile()
+        except Exception as err:
+            logger.warning(f"目录扫描批次 {scan_id} 失败：{err}")
+            oper.finish_scan(scan_id, str(err))
+
+    @classmethod
+    def poll_directories(cls) -> None:
+        """由现有调度器检查到期目录并更新执行历史"""
+        GdriveDirectoryOper.reconcile()
+        from app.chain.upload import UploadChain
+        UploadChain.dispatch()
+        if not cls.get_settings().enabled and not UploadChain.get_settings().enabled:
+            return
+        for scan_id in GdriveDirectoryOper.pending_events():
+            cls._submit_scan(scan_id, False)
+        for directory_id in GdriveDirectoryOper.due():
+            cls.scan_directory(directory_id, dry_run=False, trigger="scheduled")
 
     @classmethod
     def start_task(cls, task_id: int) -> None:
         """将任务提交到后台线程，重复提交时保持幂等。"""
         global _TASK_EXECUTOR
+        task = GdriveTaskOper().get(task_id)
+        if getattr(task, "backend", "mount") == "api":
+            from app.chain.upload import UploadChain
+            UploadChain.dispatch()
+            return
         with _TASK_LOCK:
             if _EXECUTOR_CLOSING:
                 raise RuntimeError("Google Drive 任务执行器正在关闭")
@@ -394,6 +683,10 @@ class GdriveChain(ChainBase):
     @classmethod
     def cancel_task(cls, task_id: int) -> bool:
         """取消等待中或运行中的任务。"""
+        task = GdriveTaskOper().get(task_id)
+        if getattr(task, "backend", "mount") == "api":
+            from app.chain.upload import UploadChain
+            return UploadChain.cancel_task(task_id)
         with _TASK_LOCK:
             task = GdriveTaskOper().get(task_id)
             if not task or task.status in {
@@ -427,6 +720,9 @@ class GdriveChain(ChainBase):
             )
 
         config = cls.get_settings()
+        if getattr(task, "backend", "mount") == "api":
+            return GdriveTaskCleanupResult(task_id=task_id, status=task.status, dry_run=dry_run,
+                can_cleanup=False, message="API 上传会话用于断点恢复；该入口仅清理旧挂载复制任务")
         candidates: list[Path] = []
         try:
             mount_root = cls._safe_directory(config.mount_path, "挂载目录")
@@ -438,10 +734,7 @@ class GdriveChain(ChainBase):
             if archive_path:
                 candidates.append(cls._archive_claim_path(task.id, archive_path))
             if task.strm_path:
-                strm_path = Path(task.strm_path).expanduser().resolve()
-                expected_strm_path = source.with_suffix(".strm").resolve()
-                if strm_path != expected_strm_path:
-                    raise ValueError(f"任务 STRM 路径不符合源文件映射：{strm_path}")
+                strm_path = cls._task_strm_path(task, Path(task.archive_path), mount_root)
                 candidates.append(cls._strm_claim_path(strm_path, task.id))
         except (OSError, RuntimeError, ValueError) as err:
             return GdriveTaskCleanupResult(
@@ -494,25 +787,53 @@ class GdriveChain(ChainBase):
     def on_transfer_complete(self, event: Event) -> None:
         """接收整理完成事件并为整理后的媒体文件创建上传任务。"""
         config = self.get_settings()
-        if not config.enabled or not event:
+        from app.chain.upload import UploadChain
+        if not event or (not config.enabled and not UploadChain.get_settings().enabled):
             return
         data = event.event_data or {}
         transfer_info = data.get("transferinfo")
         if not transfer_info:
             return
+        target_item = getattr(transfer_info, "target_item", None)
+        if target_item and getattr(target_item, "storage", "local") not in (None, "local"):
+            return
         paths = list(getattr(transfer_info, "file_list_new", None) or [])
         if not paths and getattr(transfer_info, "target_item", None):
             paths = [transfer_info.target_item.path]
+        directories = GdriveDirectoryOper.list()
         for path in paths:
             try:
-                _, error = self.create_task(
-                    source_path=path,
-                    transfer_history_id=data.get("transfer_history_id"),
-                    media_type=getattr(data.get("mediainfo"), "type", None),
-                    title=getattr(data.get("mediainfo"), "title", None),
+                source = Path(path)
+                if not source.is_absolute() or source.resolve() != source or not source.is_file():
+                    continue
+                owners = [value for value in directories if value.enabled and (
+                    Path(value.source_path) in source.parents
+                )]
+                if len(owners) != 1 or not owners[0].transfer_enabled:
+                    continue
+                value = owners[0]
+                if not (UploadChain.get_settings().enabled if value.upload_target else config.enabled):
+                    continue
+                original = data.get('fileitem')
+                if (value.upload_target and value.upload_target.metadata_enabled and original
+                        and getattr(original, 'storage', None) == 'local'
+                        and Path(original.path) != source):
+                    GdriveHelper.prepare_strm_metadata(
+                        Path(original.path), source.with_suffix('.strm'), Path(value.source_path),
+                    )
+                media = GdriveHelper.media_snapshot(data.get("mediainfo"))
+                if data.get("transfer_history_id"):
+                    media["transfer_history_id"] = data["transfer_history_id"]
+                GdriveDirectoryOper.save_media(source.as_posix(), self._directory_fingerprint(source, source), media)
+                scan_id, error = GdriveDirectoryOper.begin_scan(
+                    value.id, False, "transfer", self.category_snapshot(value), [source.as_posix()],
+                    {source.as_posix(): {"signature": self._directory_fingerprint(source, source), "media": media}},
+                    expected_revision=value.revision,
                 )
-                if error:
-                    logger.warning(f"整理完成后创建 Google Drive 任务失败：{error}")
+                if scan_id:
+                    type(self)._submit_scan(scan_id, False)
+                elif error:
+                    logger.warning(f"整理完成后创建 Google Drive 批次失败：{error}")
             except (FileNotFoundError, OSError, RuntimeError, ValueError) as err:
                 logger.warning(f"整理完成后创建 Google Drive 任务失败：{err}")
 
@@ -733,7 +1054,7 @@ class GdriveChain(ChainBase):
         if not self._verify_archive_ownership(task_id, staging_path, archive_path):
             raise IOError(f"无法验证归档文件归属，保留已有文件：{archive_path}")
 
-        strm_path = Path(getattr(task, "strm_path", None) or source.with_suffix(".strm"))
+        strm_path = self._task_strm_path(task, archive_path, mount_root)
         with _TASK_LOCK:
             if self._is_cancelled(task_id):
                 return
@@ -859,6 +1180,29 @@ class GdriveChain(ChainBase):
             if not candidate.exists():
                 return candidate
             index += 1
+
+    @staticmethod
+    def _task_strm_path(task: object, archive_path: Path, mount_root: Path) -> Path:
+        """按任务冻结的根目录映射最终归档路径，恢复和清理共用路径校验"""
+        source = Path(task.src_path)
+        output_root = getattr(task, "strm_root", None)
+        if output_root:
+            root = Path(output_root)
+            archive_root = Path(getattr(task, "archive_root", None) or "")
+            if (not root.is_absolute() or root.resolve() != root or not archive_root.is_absolute()
+                    or archive_root.resolve() != archive_root
+                    or (archive_root != mount_root and mount_root not in archive_root.parents)
+                    or any(root == path or root in path.parents or path in root.parents
+                           for path in (mount_root, source))):
+                raise ValueError("任务 STRM 根目录或归档映射越界或包含符号链接")
+            expected = root / archive_path.relative_to(archive_root).with_suffix(".strm")
+        else:
+            expected = source.with_suffix(".strm")
+        result = Path(getattr(task, "strm_path", None) or expected)
+        if (result.resolve() != result or result.parent != expected.parent or result.suffix != ".strm"
+                or (result != expected and not re.fullmatch(re.escape(expected.stem) + r"(?: \(version \d+\))+", result.stem))):
+            raise ValueError(f"任务 STRM 路径不符合归档映射：{result}")
+        return result
 
     @staticmethod
     def _write_strm(
@@ -1173,6 +1517,8 @@ class GdriveChain(ChainBase):
     def shutdown() -> None:
         """等待 Google Drive 后处理线程完成，避免进程退出时丢失任务状态。"""
         global _TASK_EXECUTOR, _EXECUTOR_CLOSING
+        from app.chain.upload import UploadChain
+        UploadChain.shutdown()
         with _TASK_LOCK:
             _EXECUTOR_CLOSING = True
             executor = _TASK_EXECUTOR

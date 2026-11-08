@@ -11,6 +11,10 @@ import { useUserStore } from '@/stores'
 import { buildUserPermissionContext, hasPermission } from '@/utils/permission'
 import GdriveCreateDialog from '@/views/gdrive/GdriveCreateDialog.vue'
 import GdriveDetailDialog from '@/views/gdrive/GdriveDetailDialog.vue'
+import GdriveDirectoryBoard from '@/views/gdrive/GdriveDirectoryBoard.vue'
+import GdriveRules from '@/views/gdrive/GdriveRules.vue'
+import GdriveSettingsDialog from '@/views/gdrive/GdriveSettingsDialog.vue'
+import GdriveUpload from '@/views/gdrive/GdriveUpload.vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -25,6 +29,8 @@ const status = ref('all')
 const createOpen = ref(false)
 const selected = ref<GdriveTask>()
 const created = ref(false)
+const tab = ref('directories')
+const settingsOpen = ref(false)
 let timer: ReturnType<typeof setTimeout> | undefined
 let controller: AbortController | undefined
 let disposed = false
@@ -133,77 +139,104 @@ onUnmounted(() => {
           <h1 class="text-h5">{{ t('gdrive.title') }}</h1>
           <p class="text-body-2 text-medium-emphasis mt-1">{{ t('gdrive.description') }}</p>
         </div>
-        <VBtn variant="tonal" prepend-icon="mdi-refresh" :loading="loading" @click="refresh">{{
+        <VBtn v-if="tab === 'files'" variant="tonal" prepend-icon="mdi-refresh" :loading="loading" @click="refresh">{{
           t('gdrive.refresh')
         }}</VBtn>
-        <VBtn color="primary" prepend-icon="mdi-plus" @click="createOpen = true">{{ t('gdrive.newTask') }}</VBtn>
+        <VBtn v-if="tab === 'files'" color="primary" prepend-icon="mdi-plus" @click="createOpen = true">{{
+          t('gdrive.newTask')
+        }}</VBtn>
+        <VBtn v-if="user.superUser" variant="tonal" prepend-icon="mdi-cog-outline" @click="settingsOpen = true">{{
+          t('gdrive.studio.configuration')
+        }}</VBtn>
       </div>
-      <VAlert v-if="created" type="success" variant="tonal" closable class="mb-4" @click:close="created = false">{{
-        t('gdrive.created')
-      }}</VAlert>
-      <VAlert v-if="failed" type="error" variant="tonal" class="mb-4">{{ t('gdrive.listError') }}</VAlert>
-      <VCard>
-        <VCardText class="d-flex flex-wrap ga-3 align-center">
-          <VTextField
-            v-model="search"
-            :label="t('gdrive.search')"
-            prepend-inner-icon="mdi-magnify"
-            hide-details
-            clearable
-            class="gdrive-search"
-            @click:clear="search = ''"
-          />
-          <VSelect
-            v-model="status"
-            :items="statuses"
-            :label="t('gdrive.statusLabel')"
-            hide-details
-            class="gdrive-status"
-          />
-        </VCardText>
-        <p class="text-caption text-medium-emphasis px-6 pb-3">{{ t('gdrive.listHint') }}</p>
-        <VProgressLinear v-if="loading" indeterminate :aria-label="t('common.loading')" />
-        <div v-if="loaded && !filtered.length" class="pa-8 text-center">
-          <VIcon icon="mdi-folder-outline" size="40" class="mb-3 text-medium-emphasis" />
-          <p>{{ tasks.length ? t('gdrive.noMatches') : t('gdrive.empty') }}</p>
-        </div>
-        <div v-if="filtered.length" class="gdrive-tasks">
-          <article v-for="task in filtered" :key="task.id" class="gdrive-task">
-            <div class="gdrive-identity">
-              <div class="d-flex align-center ga-2 mb-1">
-                <span class="text-caption text-medium-emphasis">#{{ task.id }}</span>
-                <VChip :color="statusColor(task.status)" size="small" variant="tonal">{{
-                  statusText(task.status)
-                }}</VChip>
+      <VTabs v-model="tab" class="mb-5" show-arrows>
+        <VTab value="upload" prepend-icon="mdi-cloud-upload-outline">直接上传</VTab>
+        <VTab value="directories" prepend-icon="mdi-folder-sync-outline">{{ t('gdrive.studio.tasks') }}</VTab>
+        <VTab value="records" prepend-icon="mdi-history">{{ t('gdrive.studio.records') }}</VTab>
+        <VTab value="rules" prepend-icon="mdi-file-tree-outline">{{ t('gdrive.studio.rules') }}</VTab>
+        <VTab value="files" prepend-icon="mdi-file-video-outline">{{ t('gdrive.directory.files') }}</VTab>
+      </VTabs>
+      <GdriveDirectoryBoard
+        v-if="tab === 'directories' || tab === 'records'"
+        :mode="tab === 'records' ? 'history' : 'tasks'"
+      />
+      <GdriveRules v-if="tab === 'rules'" />
+      <GdriveUpload v-if="tab === 'upload'" />
+      <GdriveSettingsDialog
+        v-if="settingsOpen && user.superUser"
+        @close="settingsOpen = false"
+        @saved="settingsOpen = false"
+      />
+      <div v-show="tab === 'files'">
+        <VAlert v-if="created" type="success" variant="tonal" closable class="mb-4" @click:close="created = false">{{
+          t('gdrive.created')
+        }}</VAlert>
+        <VAlert v-if="failed" type="error" variant="tonal" class="mb-4">{{ t('gdrive.listError') }}</VAlert>
+        <VCard>
+          <VCardText class="d-flex flex-wrap ga-3 align-center">
+            <VTextField
+              v-model="search"
+              :label="t('gdrive.search')"
+              prepend-inner-icon="mdi-magnify"
+              hide-details
+              clearable
+              class="gdrive-search"
+              @click:clear="search = ''"
+            />
+            <VSelect
+              v-model="status"
+              :items="statuses"
+              :label="t('gdrive.statusLabel')"
+              hide-details
+              class="gdrive-status"
+            />
+          </VCardText>
+          <p class="text-caption text-medium-emphasis px-6 pb-3">{{ t('gdrive.listHint') }}</p>
+          <VProgressLinear v-if="loading" indeterminate :aria-label="t('common.loading')" />
+          <div v-if="loaded && !filtered.length" class="pa-8 text-center">
+            <VIcon icon="mdi-folder-outline" size="40" class="mb-3 text-medium-emphasis" />
+            <p>{{ tasks.length ? t('gdrive.noMatches') : t('gdrive.empty') }}</p>
+          </div>
+          <div v-if="filtered.length" class="gdrive-tasks">
+            <article v-for="task in filtered" :key="task.id" class="gdrive-task">
+              <div class="gdrive-identity">
+                <div class="d-flex align-center ga-2 mb-1">
+                  <span class="text-caption text-medium-emphasis">#{{ task.id }}</span>
+                  <VChip :color="statusColor(task.status)" size="small" variant="tonal">{{
+                    statusText(task.status)
+                  }}</VChip>
+                </div>
+                <h2 class="text-subtitle-1 text-break">{{ gdriveTaskTitle(task) }}</h2>
+                <p class="text-caption text-medium-emphasis gdrive-path">{{ task.src_path }}</p>
+                <p v-if="task.error_message" class="text-error text-body-2 gdrive-path mt-1">
+                  {{ task.error_message }}
+                </p>
               </div>
-              <h2 class="text-subtitle-1 text-break">{{ gdriveTaskTitle(task) }}</h2>
-              <p class="text-caption text-medium-emphasis gdrive-path">{{ task.src_path }}</p>
-              <p v-if="task.error_message" class="text-error text-body-2 gdrive-path mt-1">{{ task.error_message }}</p>
-            </div>
-            <div class="gdrive-progress">
-              <p class="text-body-2 mb-2">{{ statusText(task.stage) }} · {{ task.progress }}%</p>
-              <VProgressLinear
-                :model-value="task.progress"
-                :color="statusColor(task.status)"
-                height="6"
-                rounded
-                :aria-label="t('gdrive.progress')"
-              />
-              <p class="text-caption text-medium-emphasis mt-1">
-                {{ gdriveBytes(task.uploaded_size) }} / {{ gdriveBytes(task.source_size) }}
-              </p>
-            </div>
-            <div class="text-caption text-medium-emphasis">
-              <p>{{ t('gdrive.updatedAt') }}: {{ task.updated_at }}</p>
-              <p>{{ t('gdrive.retries') }}: {{ task.retry_count }}</p>
-            </div>
-            <VBtn variant="text" :aria-label="`${t('gdrive.details')} #${task.id}`" @click="selected = task">{{
-              t('gdrive.details')
-            }}</VBtn>
-          </article>
-        </div>
-      </VCard>
-      <p class="text-caption text-medium-emphasis mt-3">{{ t('gdrive.progressHint') }}</p>
+              <div class="gdrive-progress">
+                <p class="text-body-2 mb-2">{{ statusText(task.stage) }} · {{ task.progress }}%</p>
+                <VProgressLinear
+                  :model-value="task.progress"
+                  :color="statusColor(task.status)"
+                  height="6"
+                  rounded
+                  :aria-label="t('gdrive.progress')"
+                />
+                <p class="text-caption text-medium-emphasis mt-1">
+                  {{ gdriveBytes(task.uploaded_size) }} / {{ gdriveBytes(task.source_size) }}
+                </p>
+              </div>
+              <div class="text-caption text-medium-emphasis">
+                <p>{{ t('gdrive.updatedAt') }}: {{ task.updated_at }}</p>
+                <p>{{ t('gdrive.retries') }}: {{ task.retry_count }}</p>
+              </div>
+              <VBtn variant="text" :aria-label="`${t('gdrive.details')} #${task.id}`" @click="selected = task">{{
+                t('gdrive.details')
+              }}</VBtn>
+            </article>
+          </div>
+        </VCard>
+        <p class="text-caption text-medium-emphasis mt-3">{{ t('gdrive.progressHint') }}</p>
+      </div>
       <GdriveCreateDialog v-if="createOpen" @close="createOpen = false" @created="taskCreated" />
       <GdriveDetailDialog v-if="selected" :task="selected" @close="selected = undefined" />
     </template>

@@ -13,6 +13,24 @@ description: >-
 
 # MoviePilot REST API
 
+上传后云端分类：target.folder_id/path 为 drmedia 暂存目标，可选 archive_folder_id/archive_path 为同一共享盘 media 最终目标，strm_prefix 对应 media。目录扫描只预览／冻结分类路径，原整理结构先上传，核验后通过 Drive 移动同一文件 ID 到分类目录；再次核验后才输出 STRM、本地资料和定向扫库。移动响应丢失显式重试先查询原 ID，不自动重发；重名失败保留源文件及暂存文件。archive_folder_id 留空兼容旧流程，新增字段无数据库迁移。
+
+Emby 电视库的扫描入口需直接包含各部剧目录；多层二次分类时，将各最终分类目录加入同一个库。只用本地资料时，在该库关闭在线元数据和图片提供方并启用本地 NFO 读取；lockdata 不代表整个 Emby 服务零联网。上传后处理不会修改既有库的提供方设置。
+
+Google Drive API 上传目标可选 `metadata_enabled=false`、`refresh_server=""`、`refresh_library_id=""`。启用时需要独立 strm_root；STRM 后复用本地电影 NFO 或 tvshow.nfo、单集 NFO、海报与背景图，不增加在线识别；缺少 NFO、非法或冲突文件导致失败并保留源文件，已有元数据不覆盖。剧集输出要求 Season 季目录。服务器名称与库 ID 必须同时填写，元数据准备后定向请求 Emby 扫库；接受请求不代表入库或播放成功。旧上传会话默认值兼容，无迁移；旧挂载模式不提供此选项。
+
+API 上传最终校验包括云端文件 ID、名称、大小、MD5、共享盘、父目录和任务归属。仅支持单进程上传调度；总并发、每账号并发及同目标串行锁不跨进程，不同根目录与相对路径的别名也不共享目标锁。应统一目标根目录并避免其他程序并发写入同一目标。写请求结果不确定时显式重试，先核对预分配文件 ID 及服务端偏移。取消保留会话和云端数据，旧挂载清理入口不能清理 API 上传会话。
+
+Google Drive 直接上传与挂载复制独立：`GET/PUT /api/v1/gdrive/upload/settings` 管理公开账号、总并发及每账号并发；`PUT /upload/accounts/{id}/credential` 只写 Token JSON、client_id、client_secret，不回显。配置及凭据写入要求超级管理员，不能在日志或聊天中输出凭据。`POST /upload/check` 显式只读检查所选账号对共享盘目录的写权限。管理用户可通过 `POST /upload/tasks` 提交 source_path、target（account_ids/drive_id/folder_id/path/strm_prefix）、strm_root 和 remove_source（默认 false）。目录配置可选 upload_target，沿用离线分类并把结果交给上传队列，不需要真实挂载点；该模式 strm_root 留空时不生成 STRM。任务 backend=api，响应含实际 upload_account_id 与 remote_file_id；分块会话只保存在服务器私有目录。上传后以云端大小、MD5 和归属校验为准，通过后才生成普通 STRM 及执行保源/删源策略。所有自动测试必须模拟 Google API，真实上传验收须用户指定共享盘及专属测试目录。
+
+Google Drive 目录任务接口位于 `/api/v1/gdrive/directories`，支持读取、新增、修改和删除；扫描为 `POST /api/v1/gdrive/directories/{id}/scan`，默认 `{"dry_run":true}` 仅预览，显式 false 才实际归档。批次历史和详情位于 `/api/v1/gdrive/scans` 与 `/api/v1/gdrive/scans/{id}`。管理用户可读，配置写入、删除和扫描要求超级管理员。保存不立即扫描；新任务默认停用并保留源文件。定时任务仅在任务与总功能均启用时执行。参数、过滤与限制见 `docs/mcp-api.md` 的 Google Drive 一节。
+
+归档规则可选 category_policy，目录 inherit 模式应用所选规则的分类，custom / moviepilot 可覆盖。分类名允许安全多层路径，path_mode=relative 直接相对归档根目录，media_type 保持旧前缀。支持 ? 可选组、+ 必需值、- / ! 排除、year 闭区间、标题 keywords、已有标签 include_keywords 及系列关键词／演员／导演子目录。系列只生成目录；仅系列规则须命中系列，组合规则仍要求可选组命中。`POST /api/v1/gdrive/categories/import` 接收 content 和 policy，返回有序草稿 policy 与 warnings，不保存。`POST /rules/preview` 可附离线 media 样例；不得在线补查标签或演职员。YAML 仅 movie/tv 映射，限制 256 KiB，拒绝未知字段、重复键、别名和非法路径。
+
+目录的 `classification_mode` 支持 inherit（默认沿用整理）、moviepilot（冻结现有 category.yaml）、custom（独立二级分类）。`category_policy` 的 movie/tv 为有序 `{name, conditions}` 数组，支持语种、国家、类型编号、年份等条件及 unmatched=skip/fallback/keep。`transfer_enabled` 默认 true，仅已启用目录接管范围内的本地整理完成事件，保持过滤及持久指纹去重；事件批次在重启后恢复。`strm_root` 指定与源目录、挂载隔离的本地媒体库，按最终归档结构生成文本 STRM，留空兼容源文件旁输出。`POST /api/v1/gdrive/categories/preview` 接收 config/filename/media，返回 path/policy，只用离线样例。分类信息来自事件、历史、NFO 或文件名；不得请求或填写新密钥、增加在线识别或绕过目录任务。
+
+可复用归档规则位于 `/api/v1/gdrive/rules`（GET/POST）及 `/rules/{id}`（PUT/DELETE）；目录通过 `rule_id` 引用。`POST /rules/preview` 接收 `rule` 与 `filename`，只解析本地文件名并返回目录结构，不连接外部识别服务。规则分别设置电影/剧集目录、文件名模板和分类顺序，变量、缺失字段与安全限制见 API 文档。扫描保存规则快照，详情返回配置、规则版本及文件实际 stage/progress；`GET /api/v1/gdrive/tasks/{id}` 可从旧历史读取文件流程。读取和预览要求管理权限，规则写入和删除要求超级管理员；引用中的规则不能删除。
+
 > All script paths are relative to this skill file.
 
 Use `scripts/mp-api.py` to call any MoviePilot REST API endpoint directly.

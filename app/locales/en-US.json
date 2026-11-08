@@ -97,6 +97,11 @@
     }
   },
   "messages": {
+    "所选上传账号无效或已停用": "The selected upload accounts are invalid or disabled",
+    "凭据保存失败，请检查 Token JSON 和私有目录权限": "Failed to save credentials. Check the token JSON and private directory permissions",
+    "上传账号不存在": "Upload account not found",
+    "扫描批次不存在": "Scan batch not found",
+    "文件任务不存在": "File task not found",
     "模块不支持测试": "Module does not support testing",
     "网络请求失败": "Network request failed",
     "TMDB请求失败": "TMDB request failed",

@@ -25,6 +25,7 @@ from app.chain.site import SiteChain
 from app.chain.subscribe import SubscribeChain
 from app.chain.transfer import TransferChain
 from app.chain.workflow import WorkflowChain
+from app.chain.gdrive import GdriveChain
 from app.core.config import settings, global_vars
 from app.core.event import Event, eventmanager
 from app.core.plugin import PluginManager
@@ -757,6 +758,16 @@ class Scheduler(ConfigReloadMixin, metaclass=SingletonClass):
                     hours=12,
                     kwargs={"job_id": "usage_report"},
                 )
+
+            self._scheduler.add_job(
+                GdriveChain.poll_directories,
+                "interval",
+                id="gdrive_directories",
+                name="Google Drive 目录扫描",
+                seconds=30,
+                max_instances=1,
+                coalesce=True,
+            )
 
             # 初始化工作流服务
             self.init_workflow_jobs()

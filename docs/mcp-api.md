@@ -1,5 +1,15 @@
 # MoviePilot MCP (Model Context Protocol) API 文档
 
+下载器离线整理：当 `TMDB_API_KEY` 显式为空、任务尚无媒体信息且源存储为本地时，整理链可读取已配置下载根内的同名 NFO／movie.nfo，或向上最多三层的 tvshow.nfo。只接受具有标题和数字年份的 movie／tvshow，拒绝符号链接、外部实体及超过 1 MiB 的 NFO；单集标题不会用作剧名。离线身份为 `local_nfo`，不补充 TMDB 信息。下载整理目录应关闭在线刮削及依赖 TMDB 的自动类别目录，由 GDrive 已有分类规则完成上传后的分类归档。若代码默认密钥非空，必须通过系统设置显式保存空值，重启后核验，不能仅省略配置项。
+
+启用本地资料的 GDrive 上传目录收到整理完成事件后，会先把下载源的随片 NFO／图片准备到本地整理目录，再提交上传；此时不生成 STRM。缺资料或内容冲突时停止事件接管并保留源文件。最终 STRM 与旁边资料仍在云端归档核验后生成，随后请求指定媒体库扫描。正式部署需配置下载器下载根、本地整理根、共享盘 drmedia／media 两个不同根、对应 media 的只读播放入口，以及 Emby 可读的 STRM 根；上述目录和服务应分别核验持久化及权限。
+
+Google Drive 上传目标可选 `archive_folder_id`、`archive_path`（默认空）。`folder_id/path` 指向上传暂存根（如 drmedia），`archive_folder_id/archive_path` 指向同一共享盘的最终归档根（如 media），`strm_prefix` 对应最终归档根的播放地址。目录任务保留源目录结构上传，再按批次冻结的离线分类结果移动云端文件；路径可先只读预览，实际归档移动必须在上传核验后。单文件任务的 archive_path 为含文件名的最终路径，留空沿用上传路径。归档移动保留原云端 ID，持久保存父目录和名称，重新查询并核验后才生成 STRM、复用本地资料、请求定向扫库。移动响应不确定时不自动重发，显式重试先查询同一 ID；重名或归属冲突保留暂存及本地源文件。已进入归档的文件缺失时停止重传。两个根目录不能相同；留空 archive_folder_id 兼容原直接上传。无需数据库迁移，目标字段随任务 JSON 冻结。
+
+Emby 使用说明：服务器名称填写已启用的配置名，例如 `本机 Emby`；媒体库 ID 为该服务器的库编号。电视库的各扫描入口应直接包含各部剧目录；使用多层二次分类时，将最终分类目录分别加入同一个电视库，避免分类目录被识别成剧名。若要求只使用本地资料，需要在对应 Emby 库关闭在线元数据和图片提供方，并保持本地 NFO 读取启用；NFO 的 lockdata 本身不代表整个 Emby 服务不会联网。此功能不会自动修改现有媒体库提供方设置，也不对扫库提速作未测量的承诺。
+
+Google Drive API 上传目标新增可选 `metadata_enabled`（默认 false）、`refresh_server` 与 `refresh_library_id`（默认空）。启用本地元数据时必须配置 `strm_root`，上传及云端校验、STRM 生成后，复用本地 NFO 与图片输出到 STRM 旁，不在线识别。电影优先同名 NFO 再 movie.nfo；剧集需要 tvshow.nfo，按 Season 目录输出剧和集 NFO，已有季集号可生成基础集信息。图片复用本地 poster/fanart/backdrop 等；移除 NFO 中远端图片引用并标记锁定。缺资料、非法 XML、符号链接或目标冲突导致任务失败并保留源文件，不覆盖已有元数据。设置刷新服务器名称与库 ID 后，元数据完成再请求指定 Emby 媒体库扫描；HTTP 200/202/204 只表示扫描请求接受，不等于条目入库或播放成功。两字段须同时填写，禁止隐式全库刷新。目标设置随任务 JSON 冻结，无数据库迁移；旧续传会话按新模型补默认值兼容。仅 API 直接上传流程提供此后处理；旧挂载复制暂不支持。
+
 MoviePilot 实现了标准的 **Model Context Protocol (MCP)**，允许 AI 智能体（如 Claude, GPT 等）直接调用 MoviePilot 的功能进行媒体管理、搜索、订阅和下载。
 
 ## 1. 基础信息
@@ -122,9 +132,15 @@ MoviePilot 也提供普通 REST API 给前端和自动化客户端使用。所�
 
 因此，普通 REST 接口可将文档中的 `/api/v1/...` 路径直接替换为 `/api/v2/...`。例如 `/api/v1/download/` 对应 `/api/v2/download/`。
 
-#### Google Drive 挂载目录后处理
+#### Google Drive 上传与挂载目录后处理
 
-以下接口用于把整理完成的本地媒体文件复制到已有的 Google Drive 本地挂载目录。首期不调用 Google Drive SDK；接口需要管理员登录态，归档路径必须位于挂载目录内。任务使用 SHA-256 校验复制内容，重复归档会保留独立版本（如 `name (version 2).ext`），STRM 同名时也会以版本名发布而不会覆盖既有文件。数据库租约防止不同进程同时执行同一任务；长时间操作会续约，失去租约的 worker 必须停止。
+直接上传通过 Google Drive API 将本地媒体上传到团队共享盘，使用独立开关，不依赖挂载目录。支持 OAuth 用户 Token JSON（含 rclone 格式）；自动续期需要 refresh_token、client_id 和 client_secret，暂不支持服务账号 JSON 或浏览器授权。公开账号及并发设置由 `SystemConfigKey.GdriveUploadSettings` 保存，凭据与续传会话仅保存在服务器配置目录的 `gdrive-upload` 下，目录权限 0700、文件权限 0600，接口不回显 Token。
+
+上传目标 `target` 包含 account_ids、drive_id、folder_id、path 和 strm_prefix。任务冻结目标及可选账号，按账号最小负载分配，总并发与每账号并发共同限制，每个文件固定一个账号续传。上传前预分配文件 ID，重试先查询同一 ID 和服务端偏移；会话过期后沿用该 ID 重建。网络或 5xx 等写入结果不确定时任务失败，须显式重试核对云端，不自动重发写请求。上传后再次查询并核验文件 ID、名称、大小、MD5、共享盘、父目录和任务归属，通过后才生成普通 STRM 并执行源文件策略，默认保源。
+
+API 上传仅支持单进程调度；总并发、账号并发和相同 drive_id/folder_id/path 的目标串行限制在当前进程内生效。数据库租约防止同一任务重复领取，但不提供跨进程的账号配额或目标锁。不同根目录 ID 与相对路径可能指向同一云端位置，应统一目标根目录，并避免其他程序同时写入相同目标；云端同名检查不能代替分布式排他锁。取消保留续传会话与已写入的云端内容，旧挂载清理接口拒绝清理 API 上传会话。自动测试全程模拟 Google API，真实上传验收须指定共享盘及专属测试目录。
+
+挂载复制接口用于把整理完成的本地媒体文件复制到已有的 Google Drive 本地挂载目录，需要管理员登录态，归档路径必须位于挂载目录内。任务使用 SHA-256 校验复制内容，重复归档会保留独立版本（如 `name (version 2).ext`），STRM 同名时也会以版本名发布而不会覆盖既有文件。数据库租约防止不同进程同时执行同一任务；长时间操作会续约，失去租约的 worker 必须停止。
 
 挂载文件系统应支持排他创建（`O_EXCL` 语义）和文件 SHA-256 读写；硬链接可用时优先用硬链接归档，不支持时回退到任务专属标记加排他复制。只有 `EPERM`、`ENOTSUP`、`EOPNOTSUPP` 或跨文件系统的 `EXDEV` 才会触发硬链接回退，`EIO` 等 I/O 错误会直接让任务失败，避免把挂载故障误判为能力限制。FUSE/云盘对排他创建、写入可见性、`fsync` 和原子改名的实现各不相同，必须在实际挂载验证，普通本地文件系统测试不能替代。中断复制仅在任务标记存在且归档确认为暂存内容前缀时续写；无凭据或内容不匹配时保留现有归档并让任务失败。
 
@@ -140,17 +156,59 @@ GDRIVE_TEST_MOUNT_PATH=/绝对路径/GoogleDrive挂载点 pytest tests/test_gdri
 
 | 方法 | 路径 | 说明 |
 | :--- | :--- | :--- |
+| GET | `/api/v1/gdrive/upload/settings` | 管理用户读取独立 API 上传开关、总并发、分块大小和公开账号列表及凭据是否存在；不返回 Token |
+| PUT | `/api/v1/gdrive/upload/settings` | 超级管理员设置 enabled、concurrency（1～16）、chunk_size_mb（1～64）、accounts（id/name/enabled/concurrency）；每账号并发 1～16 |
+| PUT | `/api/v1/gdrive/upload/accounts/{id}/credential` | 超级管理员只写 token（JSON 字符串）、client_id、client_secret；服务器私有文件保存，禁止记录和回显 |
+| POST | `/api/v1/gdrive/upload/check` | 超级管理员显式检查所选账号对共享盘文件夹的权限；只读网盘，不创建文件 |
+| POST | `/api/v1/gdrive/upload/tasks` | 管理用户创建直接上传任务；source_path、target、strm_root（可选）、remove_source（默认 false） |
 | GET | `/api/v1/gdrive/settings` | 查询挂载目录、归档目录、STRM 路径映射和源文件策略 |
 | PUT | `/api/v1/gdrive/settings` | 超级管理员更新挂载目录后处理配置 |
 | POST | `/api/v1/gdrive/preflight` | 只读检查源文件、挂载目录、真实挂载点、写权限和归档路径；不会创建目录或写入测试文件 |
 | GET | `/api/v1/gdrive/tasks` | 按状态查询任务及上传进度、阶段和错误信息 |
+| GET | `/api/v1/gdrive/tasks/{task_id}` | 按编号读取文件任务，供历史批次查看完整执行流程 |
 | GET | `/api/v1/gdrive/tasks/{task_id}/history` | 查询任务状态、阶段、失败和重试历史 |
-| POST | `/api/v1/gdrive/tasks` | 手动创建上传任务；任务完成后按配置生成文本 STRM，并按策略删除源文件 |
+| POST | `/api/v1/gdrive/tasks` | 创建旧挂载复制任务；直接上传应使用 `/upload/tasks` |
 | POST | `/api/v1/gdrive/tasks/{task_id}/retry` | 重试失败或取消的任务 |
 | POST | `/api/v1/gdrive/tasks/{task_id}/cancel` | 取消等待中或执行中的任务；临时文件会保留用于断点恢复 |
 | POST | `/api/v1/gdrive/tasks/{task_id}/cleanup` | 超级管理员预览或清理已取消/已完成任务的任务专属临时文件和归属标记；默认 `dry_run=true`，失败任务始终保留临时文件 |
+| GET | `/api/v1/gdrive/directories` | 管理用户读取已保存的目录任务、过滤条件和下次扫描 UTC 时间 |
+| POST | `/api/v1/gdrive/directories` | 超级管理员保存目录任务；默认停用、保留源文件，不立即扫描 |
+| PUT | `/api/v1/gdrive/directories/{directory_id}` | 超级管理员修改目录任务，存在活动批次时拒绝修改 |
+| DELETE | `/api/v1/gdrive/directories/{directory_id}` | 超级管理员删除停用且无活动批次的配置，保留历史和文件任务 |
+| POST | `/api/v1/gdrive/directories/{directory_id}/scan` | 超级管理员触发扫描；请求体默认 `{"dry_run":true}`，显式 false 才启动实际归档 |
+| GET | `/api/v1/gdrive/scans` | 管理用户查询扫描和执行历史；可按 directory_id 筛选，limit 默认 100、上限 500 |
+| GET | `/api/v1/gdrive/scans/{scan_id}` | 管理用户查看批次汇总、过滤原因和关联文件状态；明细最多前 500 项，total_items 为实际总数 |
+| GET | `/api/v1/gdrive/rules` | 管理用户读取可复用命名规则与版本 |
+| POST | `/api/v1/gdrive/rules/preview` | 管理用户提交 rule 和 filename，仅解析样例文件名并返回相对目标路径，不访问外部识别或写文件 |
+| POST | `/api/v1/gdrive/categories/preview` | 管理用户提交 config、filename 和离线 media 样例，返回相对归档路径 path 与当前冻结策略 policy，不写媒体文件 |
+| POST | `/api/v1/gdrive/categories/import` | 管理用户提交 content（YAML，最多 256 KiB）及 policy（路径／未匹配选项），返回有序草稿 policy 与 warnings，不保存或扫描 |
+| POST | `/api/v1/gdrive/rules` | 超级管理员新增归档规则 |
+| PUT | `/api/v1/gdrive/rules/{rule_id}` | 超级管理员修改规则；已有扫描使用旧规则快照 |
+| DELETE | `/api/v1/gdrive/rules/{rule_id}` | 超级管理员删除未被目录任务引用的规则 |
 
-整理完成事件会自动创建任务。服务重启时会恢复 `pending`、`uploading`、`archiving` 和 `generating_strm` 状态的任务；`failed` 和 `cancelled` 状态必须由管理员显式重试，避免启动时重复触发可能已被人工确认的失败操作。执行期间如果 worker 丢失租约，会停止后续文件操作、保留未完成阶段，并在租约释放后自动重新领取；取消任务不会删除源文件。
+目录任务支持 `name`、绝对路径 `source_path` / `archive_path`、`enabled`、`recursive`、`remove_source`、`extensions`、`ignore_keywords`、`ignore_suffixes`、`min_size_mb`、`settle_seconds`、`schedule_enabled` 和 `interval_minutes`。大小单位为 MiB；过滤不区分大小写，扩展名必须带点，拒绝 STRM 和临时文件后缀。源目录与目标目录不能嵌套或包含符号链接，归档目标必须位于配置挂载点内；预览也要求有效的系统挂载点。扫描跳过符号链接、子挂载点和命中忽略关键词的子目录；每次最多遍历 10000 个目录项，超过上限则不提交本批次文件。
+
+目录任务可通过可空的 `rule_id` 引用命名规则；未引用时保留相对目录结构。规则支持 `name`、`media_type`（auto/movie/tv）、`movie_directory`、`movie_filename`、`tv_directory`、`tv_filename` 和有序 `categories`（media_type/year/resolution/video_codec/team，最多五层且不重复）。目录模板允许多层相对目录，文件模板不含扩展名及目录分隔符。变量格式为 `{{ title }}`，支持 title/year/tmdb_id/season/episode/season_episode/resolution/video_codec/audio_codec/team/original_name/media_type；不支持代码、条件表达式、属性访问或其他 Jinja2 语法。扩展名自动保留。规则通过 `SystemConfigKey.GdriveRules` / `SystemConfigOper` 持久化，不新增数据库表。
+
+媒体信息使用本地 `MetaInfoPath` 解析，不请求 TMDB 或其他识别服务。TMDB ID 仅来自文件名已有标记；缺失模板字段、跨季范围、非法或过长路径会记录 `error:` 原因并保留源文件；缺失分类信息归为“未分类”。规则预览只解析单个样例文件名，真实扫描可合并父目录信息。已有目标沿用原归档链的版本文件策略，不覆盖已有媒体。
+
+保存配置、只读预览和实际运行是独立操作，实际运行重新检查源文件身份和目标路径。文件任务沿用现有归档和 STRM 流程。扫描记录目录配置及规则版本快照，详情返回 `config`、`rule`，文件项返回实际 `stage` 与 `progress`。数据库唯一活动键防止同一目录任务重入；文件指纹包含源路径、目标路径、设备、inode、大小和修改时间，同一版本的失败或取消任务也不会因再次扫描自动重建。需要重试时使用文件任务重试接口。
+
+现有调度器每 30 秒检查到期目录，任务与总功能均启用时才执行；间隔为 1 至 43200 分钟，时间统一为 UTC。服务重启会把未结束的扫描标为 interrupted，保留已提交文件的关联并通过原文件状态机恢复；已入队文件结束前继续阻止同一目录任务重入。扫描失败项计入 failed，过滤项计入 skipped。复制完成不等于 Google Drive 云端同步完成。
+
+目录任务另支持 `classification_mode`（默认 `inherit` 沿用整理目录及所选规则，`moviepilot` 只读复用当前 category.yaml，`custom` 独立分类）、`category_policy`、`transfer_enabled`（默认 true）和 `strm_root`（默认空）。`inherit` 在规则未配置二次分类时保持既有行为；启用二次分类时按 path_mode、分类目录与命名模板生成路径，忽略旧 categories 层级以避免重复。未选择命名规则时使用默认标题、年份和季集模板。
+
+`category_policy.movie` 与 `.tv` 是有序 `{name, conditions}` 数组；同一类型名称不能重复，名称允许安全多层相对路径。`path_mode=media_type`（旧策略默认）自动添加电影／电视剧，`relative` 直接相对归档根目录。支持 original_language、origin_country、production_countries、genre_ids、release_year / year、keywords（标题子串）、include_keywords（已有标签子串）及 series_keywords / series_actors / series_directors。普通条件全部满足，带 `?` / `？` 的条件组至少一个满足；逗号普通值至少一个，`+` 值全部必需，`-` / `!` 排除，年份范围包含边界，空条件兜底。系列字段只生成首个匹配词的“关键词系列”子目录，仅系列规则须命中系列；组合规则始终要求可选组命中，不沿用 Symedia 文档中与总则不一致的系列示例。缺失字段不满足排除条件。unmatched 支持 skip / fallback / keep。YAML 拒绝重复键、别名、未知字段和非法路径；导入返回草稿和诊断，不保存。MoviePilot 模式只读冻结 category.yaml。
+
+可复用归档规则可选 `category_policy`（默认 null），继续保存在 `SystemConfigKey.GdriveRules`，无数据库结构变化。目录 inherit 模式且所选规则有分类时使用该分类，custom / moviepilot 优先覆盖；已有批次通过 rule_snapshot 冻结。`POST /rules/preview` 另接收离线 media 对象，与实际目录共用分类和命名计算。NFO 可复用 tag、actor/name、director，事件快照保留已有标签与演职员，不新增网络识别。
+
+分类和命名只复用整理事件、本地整理历史、源目录内的 NFO 与文件名；不新增在线识别，不需要额外密钥。事件保存媒体信息及文件版本签名供补扫复用，签名变化后不会使用旧事件信息。NFO 最大 1 MiB，拒绝实体声明和符号链接，只读取同名 NFO、movie.nfo 和源目录边界内最多三级 tvshow.nfo；国家字段复用明确的两位代码，类型字段复用数字编号，无法从本地资料得到的条件视为缺失，不从名称猜测编号。
+
+启用任务且 `transfer_enabled=true` 时，整理完成事件只接管其源目录内的本地文件，事件无需等待静置时间，其余过滤、目录隔离、分类、命名和任务指纹与扫描共用。没有匹配任务时不自动上传；源目录重叠的任务不能同时启用。事件先持久化 waiting 批次及媒体、策略快照，再提交后台；可以在普通扫描或上传期间接收新文件。事件与扫描的同一源版本及目标指纹由数据库唯一约束去重。事件批次重启后安全重放，现有文件任务不会重新创建；每 30 秒轮询可恢复未提交的 waiting 事件。活动或等待批次存在时不能修改、删除目录配置。
+
+`strm_root` 指定本地媒体库根目录，必须与源目录和整个挂载目录隔离且路径不含符号链接；按本批次 archive_path 的最终相对结构生成 STRM，包括归档冲突后的版本文件名。输出根目录及归档根目录随文件任务持久化，生成、重启恢复、清理使用同一映射校验。留空兼容已有任务，在源文件旁生成 STRM；输出仍是文本文件。STRM 成功后才按任务策略处理源文件。
+
+服务重启时会恢复 `pending`、`uploading`、`archiving` 和 `generating_strm` 状态的任务；`failed` 和 `cancelled` 状态必须由管理员显式重试，避免启动时重复触发可能已被人工确认的失败操作。执行期间如果 worker 丢失租约，会停止后续文件操作、保留未完成阶段，并在租约释放后自动重新领取；取消任务不会删除源文件。
 
 通用 REST 响应包含 `success`、`message`、`message_i18n`、`data` 字段。为兼容 App 和第三方客户端，`message` 继续保留原中文或原始后端文本；新版前端可发送 `X-MoviePilot-Locale: zh-CN|zh-TW|en-US` 或 `Accept-Language`，并优先展示 `message_i18n`。未提供语言头或翻译缺失时，`message_i18n` 会回退为原文本。
 

@@ -20,6 +20,7 @@ except Exception:
 
 from app.chain.system import SystemChain
 from app.chain.gdrive import GdriveChain
+from app.db.gdrive_directory_oper import GdriveDirectoryOper
 from app.core.config import global_vars, settings
 from app.helper.server import MoviePilotServerHelper
 from app.helper.system import SystemHelper
@@ -89,6 +90,7 @@ async def lifespan(app: FastAPI):
         # 初始化插件
         init_plugins()
         # 初始化定时器
+        GdriveDirectoryOper.reconcile(interrupted=True)
         init_scheduler()
         # 初始化监控器
         init_monitor()

@@ -8,6 +8,7 @@ import {
   type GdriveTask,
 } from '@/api/gdrive'
 import { useI18n } from 'vue-i18n'
+import GdriveFlow from './GdriveFlow.vue'
 
 const props = defineProps<{ task: GdriveTask }>()
 const emit = defineEmits<{ close: [] }>()
@@ -49,6 +50,7 @@ onUnmounted(() => controller?.abort())
   <VDialog :model-value="true" :aria-label="t('gdrive.details')" max-width="760" @update:model-value="emit('close')">
     <VCard :title="t('gdrive.details')" :subtitle="`#${task.id} · ${gdriveTaskTitle(task)}`">
       <VCardText>
+        <div class="mb-5"><GdriveFlow :stage="task.stage" :status="task.status" /></div>
         <div class="d-flex flex-wrap ga-3 mb-4">
           <VChip>{{ statusText(task.status) }}</VChip>
           <span>{{ t('gdrive.stage') }}: {{ statusText(task.stage) }}</span>
@@ -107,7 +109,7 @@ onUnmounted(() => controller?.abort())
 
 <style scoped>
 .gdrive-paths dt {
-  color: rgb(var(--v-theme-on-surface-variant));
+  color: rgba(var(--v-theme-on-surface), 0.7);
   margin-block-start: 0.75rem;
   font-size: 0.8rem;
 }

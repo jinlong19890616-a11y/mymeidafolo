@@ -27,6 +27,12 @@ async function runPreflight() {
   await screen.findByText('预检通过，可以创建任务')
 }
 
+async function renderFilePage() {
+  const rendered = await renderWithProviders(GdrivePage, { initialState })
+  await fireEvent.click(screen.getByRole('tab', { name: '文件任务' }))
+  return rendered
+}
+
 beforeEach(() => {
   server.use(
     http.get(`${url}/tasks`, () => HttpResponse.json([gdriveTask()])),
@@ -34,6 +40,8 @@ beforeEach(() => {
     http.post(`${url}/preflight`, () => HttpResponse.json(gdrivePreflight)),
     http.post(`${url}/tasks`, () => HttpResponse.json({ success: true, data: { id: 2 } })),
     http.get(`${url}/tasks/1/history`, () => HttpResponse.json(gdriveHistory)),
+    http.get(`${url}/directories`, () => HttpResponse.json([])),
+    http.get(`${url}/scans`, () => HttpResponse.json([])),
   )
 })
 
@@ -47,7 +55,7 @@ describe('GDrive 任务主流程（离线 HTTP 边界）', () => {
         ]),
       ),
     )
-    await renderWithProviders(GdrivePage, { initialState })
+    await renderFilePage()
     await screen.findByText('示例电影')
     const search = screen.getByLabelText('搜索已加载任务的标题或路径')
     await fireEvent.update(search, 'missing')
@@ -71,7 +79,7 @@ describe('GDrive 任务主流程（离线 HTTP 边界）', () => {
 
   it('首次加载失败可手动恢复，创建后刷新列表', async () => {
     server.use(http.get(`${url}/tasks`, () => HttpResponse.json({}, { status: 500 })))
-    await renderWithProviders(GdrivePage, { initialState })
+    await renderFilePage()
     expect(await screen.findByText(/任务加载失败/)).toBeVisible()
     server.use(http.get(`${url}/tasks`, () => HttpResponse.json([])))
     await fireEvent.click(screen.getByRole('button', { name: '刷新' }))
@@ -95,6 +103,8 @@ describe('GDrive 任务主流程（离线 HTTP 边界）', () => {
     expect(screen.getByText(/需要管理权限/)).toBeVisible()
     expect(list).not.toHaveBeenCalled()
     useUserStore(rendered.pinia).permissions.manage = true
+    await nextTick()
+    await fireEvent.click(screen.getByRole('tab', { name: '文件任务' }))
     await screen.findByText('示例电影')
     await fireEvent.click(screen.getByRole('button', { name: '新建任务' }))
     await screen.findByRole('dialog', { name: '新建任务' })
@@ -112,7 +122,7 @@ describe('GDrive 任务主流程（离线 HTTP 边界）', () => {
         return HttpResponse.json([gdriveTask()])
       }),
     )
-    const rendered = await renderWithProviders(GdrivePage, { initialState })
+    const rendered = await renderFilePage()
     await screen.findByText('示例电影')
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     await fireEvent.click(screen.getByRole('button', { name: '刷新' }))
@@ -154,7 +164,7 @@ describe('GDrive 任务主流程（离线 HTTP 边界）', () => {
   })
 
   it('新建成功时等待进行中的旧列表完成，再查询最新列表', async () => {
-    await renderWithProviders(GdrivePage, { initialState })
+    await renderFilePage()
     await screen.findByText('示例电影')
     await fireEvent.click(screen.getByRole('button', { name: '新建任务' }))
     await screen.findByText(/当前策略/)
@@ -184,7 +194,7 @@ describe('GDrive 任务主流程（离线 HTTP 边界）', () => {
   it('全部任务完成后停止轮询，卸载中止尚未完成的列表请求', async () => {
     server.use(http.get(`${url}/tasks`, () => HttpResponse.json([gdriveTask({ status: 'completed' })])))
     const list = vi.fn()
-    const rendered = await renderWithProviders(GdrivePage, { initialState })
+    const rendered = await renderFilePage()
     await screen.findByText('示例电影')
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     server.use(
@@ -342,7 +352,7 @@ describe('GDrive 任务主流程（离线 HTTP 边界）', () => {
       ),
       http.get(`${url}/tasks/1/history`, () => HttpResponse.json([])),
     )
-    await renderWithProviders(GdrivePage, { initialState })
+    await renderFilePage()
     await screen.findByText('示例电影')
     await fireEvent.click(screen.getByRole('button', { name: '新建任务' }))
     await screen.findByRole('dialog', { name: '新建任务' })

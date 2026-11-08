@@ -29,8 +29,14 @@ def test_gdrive_endpoint_permissions_are_split_by_risk():
         gdrive_endpoint.create_task,
         gdrive_endpoint.retry_task,
         gdrive_endpoint.cancel_task,
+        gdrive_endpoint.get_task,
+        gdrive_endpoint.list_rules,
+        gdrive_endpoint.preview_rule,
     ]
-    superuser_endpoints = [gdrive_endpoint.update_settings, gdrive_endpoint.cleanup_task]
+    superuser_endpoints = [
+        gdrive_endpoint.update_settings, gdrive_endpoint.cleanup_task,
+        gdrive_endpoint.create_rule, gdrive_endpoint.update_rule, gdrive_endpoint.delete_rule,
+    ]
 
     assert all(_dependency_of(endpoint, "_") is get_current_active_manage_user
                for endpoint in manage_endpoints)
@@ -166,3 +172,56 @@ async def test_history_rejects_non_integer_task_id_at_http_layer():
         response = await client.get("/gdrive/tasks/not-an-id/history")
 
     assert response.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_rule_http_permissions_preview_and_validation(monkeypatch):
+    """管理用户可预览规则，写入要求超级管理员，危险模板由 HTTP 层拒绝"""
+    from fastapi import HTTPException
+
+    app = FastAPI()
+    app.include_router(gdrive_endpoint.router, prefix="/gdrive")
+    app.dependency_overrides[get_current_active_manage_user] = lambda: SimpleNamespace()
+
+    def denied():
+        """模拟没有超级管理员权限的已登录用户"""
+        raise HTTPException(status_code=403)
+
+    app.dependency_overrides[get_current_active_superuser] = denied
+    monkeypatch.setattr(gdrive_endpoint.GdriveDirectoryOper, "rules", staticmethod(lambda: []))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+        assert (await client.get("/gdrive/rules")).json() == []
+        preview = await client.post("/gdrive/rules/preview", json={
+            "rule": {"name": "预览"}, "filename": "Example.Movie.2024.mkv",
+        })
+        assert preview.status_code == 200
+        assert preview.json()["success"] and "2024" in preview.json()["data"]["path"]
+        for method, path in (("POST", "/gdrive/rules"), ("PUT", "/gdrive/rules/1"), ("DELETE", "/gdrive/rules/1")):
+            assert (await client.request(method, path, json={"name": "拒绝"})).status_code == 403
+        unsafe = await client.post("/gdrive/rules/preview", json={
+            "rule": {"name": "无效", "movie_directory": "../{{ title }}"}, "filename": "Example.mkv",
+        })
+        assert unsafe.status_code == 422
+        missing = await client.post("/gdrive/rules/preview", json={
+            "rule": {"name": "缺少 ID", "movie_filename": "{{ tmdb_id }}"}, "filename": "Example.2024.mkv",
+        })
+        assert missing.json()["success"] is False and "tmdb_id" in missing.json()["message"]
+
+
+@pytest.mark.anyio
+async def test_file_detail_http_status_and_serialization(monkeypatch):
+    """文件详情按编号读取并序列化阶段，缺失或非法编号返回明确状态"""
+    from app.schemas.gdrive import GdriveTaskInfo
+
+    value = GdriveTaskInfo(id=17, src_path="/source/movie.mkv", status="failed", stage="archiving",
+                           progress=100, remove_source=False, created_at="2026-01-01", updated_at="2026-01-01")
+    monkeypatch.setattr(gdrive_endpoint.GdriveTaskOper, "get",
+                        lambda self, task_id: SimpleNamespace(to_dict=value.model_dump) if task_id == 17 else None)
+    app = FastAPI()
+    app.include_router(gdrive_endpoint.router, prefix="/gdrive")
+    app.dependency_overrides[get_current_active_manage_user] = lambda: SimpleNamespace()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+        response = await client.get("/gdrive/tasks/17")
+        assert response.status_code == 200 and response.json()["stage"] == "archiving"
+        assert (await client.get("/gdrive/tasks/18")).status_code == 404
+        assert (await client.get("/gdrive/tasks/invalid")).status_code == 422
